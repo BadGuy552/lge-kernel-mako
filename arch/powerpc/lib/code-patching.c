@@ -13,23 +13,17 @@
 #include <linux/mm.h>
 #include <asm/page.h>
 #include <asm/code-patching.h>
-#include <asm/uaccess.h>
 
 
-int patch_instruction(unsigned int *addr, unsigned int instr)
+void patch_instruction(unsigned int *addr, unsigned int instr)
 {
-	int err;
-
-	__put_user_size(instr, addr, 4, err);
-	if (err)
-		return err;
+	*addr = instr;
 	asm ("dcbst 0, %0; sync; icbi 0,%0; sync; isync" : : "r" (addr));
-	return 0;
 }
 
-int patch_branch(unsigned int *addr, unsigned long target, int flags)
+void patch_branch(unsigned int *addr, unsigned long target, int flags)
 {
-	return patch_instruction(addr, create_branch(addr, target, flags));
+	patch_instruction(addr, create_branch(addr, target, flags));
 }
 
 unsigned int create_branch(const unsigned int *addr,
@@ -159,21 +153,6 @@ unsigned int translate_branch(const unsigned int *dest, const unsigned int *src)
 	return 0;
 }
 
-#ifdef CONFIG_PPC_BOOK3E_64
-void __patch_exception(int exc, unsigned long addr)
-{
-	extern unsigned int interrupt_base_book3e;
-	unsigned int *ibase = &interrupt_base_book3e;
-
-	/* Our exceptions vectors start with a NOP and -then- a branch
-	 * to deal with single stepping from userspace which stops on
-	 * the second instruction. Thus we need to patch the second
-	 * instruction of the exception, not the first one
-	 */
-
-	patch_branch(ibase + (exc / 4) + 1, addr, 0);
-}
-#endif
 
 #ifdef CONFIG_CODE_PATCHING_SELFTEST
 

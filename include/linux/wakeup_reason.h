@@ -18,7 +18,6 @@
 #ifndef _LINUX_WAKEUP_REASON_H
 #define _LINUX_WAKEUP_REASON_H
 
-<<<<<<< HEAD
 #include <linux/types.h>
 #include <linux/completion.h>
 
@@ -102,17 +101,4 @@ void clear_wakeup_reasons(void);
 void log_suspend_abort_reason(const char *fmt, ...);
 int check_wakeup_reason(int irq);
 
-=======
-#define MAX_SUSPEND_ABORT_LEN 256
-
-void log_wakeup_reason(int irq);
-int check_wakeup_reason(int irq);
-
-#ifdef CONFIG_SUSPEND
-void log_suspend_abort_reason(const char *fmt, ...);
-#else
-static inline void log_suspend_abort_reason(const char *fmt, ...) { }
-#endif
-
->>>>>>> android-4.9
 #endif /* _LINUX_WAKEUP_REASON_H */

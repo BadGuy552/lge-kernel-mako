@@ -11,21 +11,30 @@
  *
  */
 
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-
-#include <linux/cpufreq.h>
-#include <linux/init.h>
+#include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/smp.h>
+#include <linux/init.h>
+#include <linux/spinlock.h>
+#include <linux/interrupt.h>
+#include <linux/cpufreq.h>
+#include <linux/cpu.h>
+#include <linux/types.h>
+#include <linux/fs.h>
+#include <linux/sysfs.h>
 #include <linux/mutex.h>
-<<<<<<< HEAD
 #include <linux/delay.h>
 #include <asm/uaccess.h>
-=======
-#include <linux/slab.h>
->>>>>>> android-4.9
 
+/**
+ * A few values needed by the userspace governor
+ */
+static DEFINE_PER_CPU(unsigned int, cpu_max_freq);
+static DEFINE_PER_CPU(unsigned int, cpu_min_freq);
+static DEFINE_PER_CPU(unsigned int, cpu_cur_freq); /* current CPU freq */
+static DEFINE_PER_CPU(unsigned int, cpu_set_freq); /* CPU freq desired by
+							userspace */
 static DEFINE_PER_CPU(unsigned int, cpu_is_managed);
-<<<<<<< HEAD
 static DEFINE_PER_CPU(struct cpufreq_policy *, temp_policy);
 static DEFINE_MUTEX(userspace_mutex);
 static int cpus_using_userspace_governor;
@@ -122,9 +131,6 @@ static bool cpufreq_set_userspace_governor(void)
 		}
 
 		cpux_online->f_op->write(cpux_online, cpu_on, strlen(cpu_on), &offset);
-=======
-static DEFINE_MUTEX(userspace_mutex);
->>>>>>> android-4.9
 
 		memset(buf,0,sizeof(buf));
 		sprintf(buf, cpufreq_sysfs_governor_path, i);
@@ -198,7 +204,6 @@ static ssize_t show_test(struct cpufreq_policy *policy, char *buf)
 static int cpufreq_set(struct cpufreq_policy *policy, unsigned int freq)
 {
 	int ret = -EINVAL;
-	unsigned int *setspeed = policy->governor_data;
 
 	printk("cpufreq_set for cpu %u, freq %u kHz\n", policy->cpu, freq);
 
@@ -207,23 +212,40 @@ static int cpufreq_set(struct cpufreq_policy *policy, unsigned int freq)
 	if (!per_cpu(cpu_is_managed, policy->cpu))
 		goto err;
 
-	*setspeed = freq;
+	per_cpu(cpu_set_freq, policy->cpu) = freq;
 
+	if (freq < per_cpu(cpu_min_freq, policy->cpu))
+		freq = per_cpu(cpu_min_freq, policy->cpu);
+	if (freq > per_cpu(cpu_max_freq, policy->cpu))
+		freq = per_cpu(cpu_max_freq, policy->cpu);
+
+	/*
+	 * We're safe from concurrent calls to ->target() here
+	 * as we hold the userspace_mutex lock. If we were calling
+	 * cpufreq_driver_target, a deadlock situation might occur:
+	 * A: cpufreq_set (lock userspace_mutex) ->
+	 *      cpufreq_driver_target(lock policy->lock)
+	 * B: cpufreq_set_policy(lock policy->lock) ->
+	 *      __cpufreq_governor ->
+	 *         cpufreq_governor_userspace (lock userspace_mutex)
+	 */
 	ret = __cpufreq_driver_target(policy, freq, CPUFREQ_RELATION_L);
+
  err:
 	if(!stress_test_enable)
 	mutex_unlock(&userspace_mutex);
 	return ret;
 }
 
+
 static ssize_t show_speed(struct cpufreq_policy *policy, char *buf)
 {
-	return sprintf(buf, "%u\n", policy->cur);
+	return sprintf(buf, "%u\n", per_cpu(cpu_cur_freq, policy->cpu));
 }
 
-static int cpufreq_userspace_policy_init(struct cpufreq_policy *policy)
+static int cpufreq_governor_userspace(struct cpufreq_policy *policy,
+				   unsigned int event)
 {
-<<<<<<< HEAD
 	unsigned int cpu = policy->cpu;
 	int rc = 0;
 
@@ -298,81 +320,15 @@ static int cpufreq_userspace_policy_init(struct cpufreq_policy *policy)
 		break;
 	}
 	return rc;
-=======
-	unsigned int *setspeed;
-
-	setspeed = kzalloc(sizeof(*setspeed), GFP_KERNEL);
-	if (!setspeed)
-		return -ENOMEM;
-
-	policy->governor_data = setspeed;
-	return 0;
->>>>>>> android-4.9
 }
 
-static void cpufreq_userspace_policy_exit(struct cpufreq_policy *policy)
-{
-	mutex_lock(&userspace_mutex);
-	kfree(policy->governor_data);
-	policy->governor_data = NULL;
-	mutex_unlock(&userspace_mutex);
-}
-
-static int cpufreq_userspace_policy_start(struct cpufreq_policy *policy)
-{
-	unsigned int *setspeed = policy->governor_data;
-
-	BUG_ON(!policy->cur);
-	pr_debug("started managing cpu %u\n", policy->cpu);
-
-	mutex_lock(&userspace_mutex);
-	per_cpu(cpu_is_managed, policy->cpu) = 1;
-	*setspeed = policy->cur;
-	mutex_unlock(&userspace_mutex);
-	return 0;
-}
-
-static void cpufreq_userspace_policy_stop(struct cpufreq_policy *policy)
-{
-	unsigned int *setspeed = policy->governor_data;
-
-	pr_debug("managing cpu %u stopped\n", policy->cpu);
-
-	mutex_lock(&userspace_mutex);
-	per_cpu(cpu_is_managed, policy->cpu) = 0;
-	*setspeed = 0;
-	mutex_unlock(&userspace_mutex);
-}
-
-static void cpufreq_userspace_policy_limits(struct cpufreq_policy *policy)
-{
-	unsigned int *setspeed = policy->governor_data;
-
-	mutex_lock(&userspace_mutex);
-
-	pr_debug("limit event for cpu %u: %u - %u kHz, currently %u kHz, last set to %u kHz\n",
-		 policy->cpu, policy->min, policy->max, policy->cur, *setspeed);
-
-	if (policy->max < *setspeed)
-		__cpufreq_driver_target(policy, policy->max, CPUFREQ_RELATION_H);
-	else if (policy->min > *setspeed)
-		__cpufreq_driver_target(policy, policy->min, CPUFREQ_RELATION_L);
-	else
-		__cpufreq_driver_target(policy, *setspeed, CPUFREQ_RELATION_L);
-
-	mutex_unlock(&userspace_mutex);
-}
 
 #ifndef CONFIG_CPU_FREQ_DEFAULT_GOV_USERSPACE
 static
 #endif
 struct cpufreq_governor cpufreq_gov_userspace = {
 	.name		= "userspace",
-	.init		= cpufreq_userspace_policy_init,
-	.exit		= cpufreq_userspace_policy_exit,
-	.start		= cpufreq_userspace_policy_start,
-	.stop		= cpufreq_userspace_policy_stop,
-	.limits		= cpufreq_userspace_policy_limits,
+	.governor	= cpufreq_governor_userspace,
 	.store_setspeed	= cpufreq_set,
 	.show_setspeed	= show_speed,
 	.start_dvfs_test	 =  start_test,
@@ -387,10 +343,12 @@ static int __init cpufreq_gov_userspace_init(void)
 	return cpufreq_register_governor(&cpufreq_gov_userspace);
 }
 
+
 static void __exit cpufreq_gov_userspace_exit(void)
 {
 	cpufreq_unregister_governor(&cpufreq_gov_userspace);
 }
+
 
 MODULE_AUTHOR("Dominik Brodowski <linux@brodo.de>, "
 		"Russell King <rmk@arm.linux.org.uk>");
@@ -398,11 +356,6 @@ MODULE_DESCRIPTION("CPUfreq policy governor 'userspace'");
 MODULE_LICENSE("GPL");
 
 #ifdef CONFIG_CPU_FREQ_DEFAULT_GOV_USERSPACE
-struct cpufreq_governor *cpufreq_default_governor(void)
-{
-	return &cpufreq_gov_userspace;
-}
-
 fs_initcall(cpufreq_gov_userspace_init);
 #else
 module_init(cpufreq_gov_userspace_init);

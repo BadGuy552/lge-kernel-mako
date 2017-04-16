@@ -598,13 +598,12 @@ static void close_rx(struct atm_vcc *vcc)
 static int start_rx(struct atm_dev *dev)
 {
 	struct zatm_dev *zatm_dev;
-	int i;
+	int size,i;
 
-	DPRINTK("start_rx\n");
+DPRINTK("start_rx\n");
 	zatm_dev = ZATM_DEV(dev);
-	zatm_dev->rx_map = kcalloc(zatm_dev->chans,
-				   sizeof(*zatm_dev->rx_map),
-				   GFP_KERNEL);
+	size = sizeof(struct atm_vcc *)*zatm_dev->chans;
+	zatm_dev->rx_map =  kzalloc(size,GFP_KERNEL);
 	if (!zatm_dev->rx_map) return -ENOMEM;
 	/* set VPI/VCI split (use all VCIs and give what's left to VPIs) */
 	zpokel(zatm_dev,(1 << dev->ci_range.vci_bits)-1,uPD98401_VRR);
@@ -999,9 +998,8 @@ static int start_tx(struct atm_dev *dev)
 
 	DPRINTK("start_tx\n");
 	zatm_dev = ZATM_DEV(dev);
-	zatm_dev->tx_map = kmalloc_array(zatm_dev->chans,
-					 sizeof(*zatm_dev->tx_map),
-					 GFP_KERNEL);
+	zatm_dev->tx_map = kmalloc(sizeof(struct atm_vcc *)*
+	    zatm_dev->chans,GFP_KERNEL);
 	if (!zatm_dev->tx_map) return -ENOMEM;
 	zatm_dev->tx_bw = ATM_OC3_PCR;
 	zatm_dev->free_shapers = (1 << NR_SHAPERS)-1;
@@ -1096,8 +1094,8 @@ static irqreturn_t zatm_int(int irq,void *dev_id)
 /*----------------------------- (E)EPROM access -----------------------------*/
 
 
-static void eprom_set(struct zatm_dev *zatm_dev, unsigned long value,
-		      unsigned short cmd)
+static void __devinit eprom_set(struct zatm_dev *zatm_dev,unsigned long value,
+    unsigned short cmd)
 {
 	int error;
 
@@ -1107,7 +1105,8 @@ static void eprom_set(struct zatm_dev *zatm_dev, unsigned long value,
 }
 
 
-static unsigned long eprom_get(struct zatm_dev *zatm_dev, unsigned short cmd)
+static unsigned long __devinit eprom_get(struct zatm_dev *zatm_dev,
+    unsigned short cmd)
 {
 	unsigned int value;
 	int error;
@@ -1119,8 +1118,8 @@ static unsigned long eprom_get(struct zatm_dev *zatm_dev, unsigned short cmd)
 }
 
 
-static void eprom_put_bits(struct zatm_dev *zatm_dev, unsigned long data,
-			   int bits, unsigned short cmd)
+static void __devinit eprom_put_bits(struct zatm_dev *zatm_dev,
+    unsigned long data,int bits,unsigned short cmd)
 {
 	unsigned long value;
 	int i;
@@ -1134,8 +1133,8 @@ static void eprom_put_bits(struct zatm_dev *zatm_dev, unsigned long data,
 }
 
 
-static void eprom_get_byte(struct zatm_dev *zatm_dev, unsigned char *byte,
-			   unsigned short cmd)
+static void __devinit eprom_get_byte(struct zatm_dev *zatm_dev,
+    unsigned char *byte,unsigned short cmd)
 {
 	int i;
 
@@ -1150,8 +1149,8 @@ static void eprom_get_byte(struct zatm_dev *zatm_dev, unsigned char *byte,
 }
 
 
-static unsigned char eprom_try_esi(struct atm_dev *dev, unsigned short cmd,
-				   int offset, int swap)
+static unsigned char __devinit eprom_try_esi(struct atm_dev *dev,
+    unsigned short cmd,int offset,int swap)
 {
 	unsigned char buf[ZEPROM_SIZE];
 	struct zatm_dev *zatm_dev;
@@ -1171,7 +1170,7 @@ static unsigned char eprom_try_esi(struct atm_dev *dev, unsigned short cmd,
 }
 
 
-static void eprom_get_esi(struct atm_dev *dev)
+static void __devinit eprom_get_esi(struct atm_dev *dev)
 {
 	if (eprom_try_esi(dev,ZEPROM_V1_REG,ZEPROM_V1_ESI_OFF,1)) return;
 	(void) eprom_try_esi(dev,ZEPROM_V2_REG,ZEPROM_V2_ESI_OFF,0);
@@ -1181,7 +1180,7 @@ static void eprom_get_esi(struct atm_dev *dev)
 /*--------------------------------- entries ---------------------------------*/
 
 
-static int zatm_init(struct atm_dev *dev)
+static int __devinit zatm_init(struct atm_dev *dev)
 {
 	struct zatm_dev *zatm_dev;
 	struct pci_dev *pci_dev;
@@ -1258,7 +1257,7 @@ static int zatm_init(struct atm_dev *dev)
 }
 
 
-static int zatm_start(struct atm_dev *dev)
+static int __devinit zatm_start(struct atm_dev *dev)
 {
 	struct zatm_dev *zatm_dev = ZATM_DEV(dev);
 	struct pci_dev *pdev = zatm_dev->pci_dev;
@@ -1308,20 +1307,19 @@ static int zatm_start(struct atm_dev *dev)
 
 		if (!mbx_entries[i])
 			continue;
-		mbx = dma_alloc_coherent(&pdev->dev,
-					 2 * MBX_SIZE(i), &mbx_dma, GFP_KERNEL);
+		mbx = pci_alloc_consistent(pdev, 2*MBX_SIZE(i), &mbx_dma);
 		if (!mbx) {
 			error = -ENOMEM;
 			goto out;
 		}
 		/*
-		 * Alignment provided by dma_alloc_coherent() isn't enough
+		 * Alignment provided by pci_alloc_consistent() isn't enough
 		 * for this device.
 		 */
 		if (((unsigned long)mbx ^ mbx_dma) & 0xffff) {
 			printk(KERN_ERR DEV_LABEL "(itf %d): system "
 			       "bus incompatible with driver\n", dev->number);
-			dma_free_coherent(&pdev->dev, 2*MBX_SIZE(i), mbx, mbx_dma);
+			pci_free_consistent(pdev, 2*MBX_SIZE(i), mbx, mbx_dma);
 			error = -ENODEV;
 			goto out;
 		}
@@ -1357,9 +1355,9 @@ out_tx:
 	kfree(zatm_dev->tx_map);
 out:
 	while (i-- > 0) {
-		dma_free_coherent(&pdev->dev, 2 * MBX_SIZE(i),
-				  (void *)zatm_dev->mbx_start[i],
-				  zatm_dev->mbx_dma[i]);
+		pci_free_consistent(pdev, 2*MBX_SIZE(i), 
+				    (void *)zatm_dev->mbx_start[i],
+				    zatm_dev->mbx_dma[i]);
 	}
 	free_irq(zatm_dev->irq, dev);
 	goto done;
@@ -1400,7 +1398,7 @@ static int zatm_open(struct atm_vcc *vcc)
 	DPRINTK(DEV_LABEL "(itf %d): open %d.%d\n",vcc->dev->number,vcc->vpi,
 	    vcc->vci);
 	if (!test_bit(ATM_VF_PARTIAL,&vcc->flags)) {
-		zatm_vcc = kmalloc(sizeof(*zatm_vcc), GFP_KERNEL);
+		zatm_vcc = kmalloc(sizeof(struct zatm_vcc),GFP_KERNEL);
 		if (!zatm_vcc) {
 			clear_bit(ATM_VF_ADDR,&vcc->flags);
 			return -ENOMEM;
@@ -1586,8 +1584,8 @@ static const struct atmdev_ops ops = {
 	.change_qos	= zatm_change_qos,
 };
 
-static int zatm_init_one(struct pci_dev *pci_dev,
-			 const struct pci_device_id *ent)
+static int __devinit zatm_init_one(struct pci_dev *pci_dev,
+				   const struct pci_device_id *ent)
 {
 	struct atm_dev *dev;
 	struct zatm_dev *zatm_dev;
@@ -1608,10 +1606,6 @@ static int zatm_init_one(struct pci_dev *pci_dev,
 		goto out_deregister;
 
 	ret = pci_request_regions(pci_dev, DEV_LABEL);
-	if (ret < 0)
-		goto out_disable;
-
-	ret = dma_set_mask_and_coherent(&pci_dev->dev, DMA_BIT_MASK(32));
 	if (ret < 0)
 		goto out_disable;
 
@@ -1642,7 +1636,7 @@ out_free:
 
 MODULE_LICENSE("GPL");
 
-static struct pci_device_id zatm_pci_tbl[] = {
+static struct pci_device_id zatm_pci_tbl[] __devinitdata = {
 	{ PCI_VDEVICE(ZEITNET, PCI_DEVICE_ID_ZEITNET_1221), ZATM_COPPER },
 	{ PCI_VDEVICE(ZEITNET, PCI_DEVICE_ID_ZEITNET_1225), 0 },
 	{ 0, }

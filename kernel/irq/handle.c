@@ -22,24 +22,18 @@
 
 /**
  * handle_bad_irq - handle spurious and unhandled irqs
+ * @irq:       the interrupt number
  * @desc:      description of the interrupt
  *
  * Handles spurious and unhandled IRQ's. It also prints a debugmessage.
  */
-<<<<<<< HEAD
 bool handle_bad_irq(unsigned int irq, struct irq_desc *desc)
-=======
-void handle_bad_irq(struct irq_desc *desc)
->>>>>>> android-4.9
 {
-	unsigned int irq = irq_desc_get_irq(desc);
-
 	print_irq_desc(irq, desc);
-	kstat_incr_irqs_this_cpu(desc);
+	kstat_incr_irqs_this_cpu(irq, desc);
 	ack_bad_irq(irq);
 	return true;
 }
-EXPORT_SYMBOL_GPL(handle_bad_irq);
 
 /*
  * Special, empty irq handler:
@@ -48,7 +42,6 @@ irqreturn_t no_action(int cpl, void *dev_id)
 {
 	return IRQ_NONE;
 }
-EXPORT_SYMBOL_GPL(no_action);
 
 static void warn_no_thread(unsigned int irq, struct irqaction *action)
 {
@@ -59,7 +52,7 @@ static void warn_no_thread(unsigned int irq, struct irqaction *action)
 	       "but no thread function available.", irq, action->name);
 }
 
-void __irq_wake_thread(struct irq_desc *desc, struct irqaction *action)
+static void irq_wake_thread(struct irq_desc *desc, struct irqaction *action)
 {
 	/*
 	 * In case the thread crashed and was killed we just pretend that
@@ -137,17 +130,13 @@ void __irq_wake_thread(struct irq_desc *desc, struct irqaction *action)
 	wake_up_process(action->thread);
 }
 
-irqreturn_t __handle_irq_event_percpu(struct irq_desc *desc, unsigned int *flags)
+irqreturn_t
+handle_irq_event_percpu(struct irq_desc *desc, struct irqaction *action)
 {
 	irqreturn_t retval = IRQ_NONE;
-<<<<<<< HEAD
 	unsigned int flags = 0, irq = desc->irq_data.irq;
-=======
-	unsigned int irq = desc->irq_data.irq;
-	struct irqaction *action;
->>>>>>> android-4.9
 
-	for_each_action_of_desc(desc, action) {
+	do {
 		irqreturn_t res;
 
 		trace_irq_handler_entry(irq, action);
@@ -169,15 +158,11 @@ irqreturn_t __handle_irq_event_percpu(struct irq_desc *desc, unsigned int *flags
 				break;
 			}
 
-			__irq_wake_thread(desc, action);
+			irq_wake_thread(desc, action);
 
 			/* Fall through to add to randomness */
 		case IRQ_HANDLED:
-<<<<<<< HEAD
 			flags |= action->flags;
-=======
-			*flags |= action->flags;
->>>>>>> android-4.9
 			break;
 
 		default:
@@ -185,38 +170,26 @@ irqreturn_t __handle_irq_event_percpu(struct irq_desc *desc, unsigned int *flags
 		}
 
 		retval |= res;
-	}
+		action = action->next;
+	} while (action);
 
-	return retval;
-}
-
-irqreturn_t handle_irq_event_percpu(struct irq_desc *desc)
-{
-	irqreturn_t retval;
-	unsigned int flags = 0;
-
-	retval = __handle_irq_event_percpu(desc, &flags);
-
-<<<<<<< HEAD
 	add_interrupt_randomness(irq, flags);
-=======
-	add_interrupt_randomness(desc->irq_data.irq, flags);
->>>>>>> android-4.9
 
 	if (!noirqdebug)
-		note_interrupt(desc, retval);
+		note_interrupt(irq, desc, retval);
 	return retval;
 }
 
 irqreturn_t handle_irq_event(struct irq_desc *desc)
 {
+	struct irqaction *action = desc->action;
 	irqreturn_t ret;
 
 	desc->istate &= ~IRQS_PENDING;
 	irqd_set(&desc->irq_data, IRQD_IRQ_INPROGRESS);
 	raw_spin_unlock(&desc->lock);
 
-	ret = handle_irq_event_percpu(desc);
+	ret = handle_irq_event_percpu(desc, action);
 
 	raw_spin_lock(&desc->lock);
 	irqd_clear(&desc->irq_data, IRQD_IRQ_INPROGRESS);

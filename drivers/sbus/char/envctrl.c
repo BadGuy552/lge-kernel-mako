@@ -19,6 +19,7 @@
  */
 
 #include <linux/module.h>
+#include <linux/init.h>
 #include <linux/kthread.h>
 #include <linux/delay.h>
 #include <linux/ioport.h>
@@ -352,7 +353,7 @@ static int envctrl_i2c_data_translate(unsigned char data, int translate_type,
 
 	default:
 		break;
-	}
+	};
 
 	return len;
 }
@@ -643,7 +644,7 @@ envctrl_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
 	default:
 		break;
 
-	}
+	};
 
 	return ret;
 }
@@ -686,7 +687,7 @@ envctrl_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	default:
 		return -EINVAL;
-	}
+	};
 
 	return 0;
 }
@@ -946,7 +947,7 @@ static void envctrl_init_i2c_child(struct device_node *dp,
 
 		default:
 			break;
-		}
+		};
 	}
 }
 
@@ -970,13 +971,18 @@ static struct i2c_child_t *envctrl_get_i2c_child(unsigned char mon_type)
 static void envctrl_do_shutdown(void)
 {
 	static int inprog = 0;
+	int ret;
 
 	if (inprog != 0)
 		return;
 
 	inprog = 1;
 	printk(KERN_CRIT "kenvctrld: WARNING: Shutting down the system now.\n");
-	orderly_poweroff(true);
+	ret = orderly_poweroff(true);
+	if (ret < 0) {
+		printk(KERN_CRIT "kenvctrld: WARNING: system shutdown failed!\n"); 
+		inprog = 0;  /* unlikely to succeed, but we could try again */
+	}
 }
 
 static struct task_struct *kenvctrld_task;
@@ -1022,7 +1028,7 @@ static int kenvctrld(void *__unused)
 	return 0;
 }
 
-static int envctrl_probe(struct platform_device *op)
+static int __devinit envctrl_probe(struct platform_device *op)
 {
 	struct device_node *dp;
 	int index, err;
@@ -1098,7 +1104,7 @@ out_iounmap:
 	return err;
 }
 
-static int envctrl_remove(struct platform_device *op)
+static int __devexit envctrl_remove(struct platform_device *op)
 {
 	int index;
 
@@ -1125,10 +1131,11 @@ MODULE_DEVICE_TABLE(of, envctrl_match);
 static struct platform_driver envctrl_driver = {
 	.driver = {
 		.name = DRIVER_NAME,
+		.owner = THIS_MODULE,
 		.of_match_table = envctrl_match,
 	},
 	.probe		= envctrl_probe,
-	.remove		= envctrl_remove,
+	.remove		= __devexit_p(envctrl_remove),
 };
 
 module_platform_driver(envctrl_driver);

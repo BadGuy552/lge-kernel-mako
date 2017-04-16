@@ -1,7 +1,7 @@
 /****************************************************************************
- * Driver for Solarflare network controllers and boards
+ * Driver for Solarflare Solarstorm network controllers and boards
  * Copyright 2005-2006 Fen Systems Ltd.
- * Copyright 2006-2012 Solarflare Communications Inc.
+ * Copyright 2006-2010 Solarflare Communications Inc.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -46,11 +46,11 @@ struct efx_loopback_payload {
 	struct iphdr ip;
 	struct udphdr udp;
 	__be16 iteration;
-	char msg[64];
+	const char msg[64];
 } __packed;
 
 /* Loopback test source MAC address */
-static const u8 payload_source[ETH_ALEN] __aligned(2) = {
+static const unsigned char payload_source[ETH_ALEN] = {
 	0x00, 0x0f, 0x53, 0x1b, 0x1b, 0x1b,
 };
 
@@ -114,10 +114,20 @@ static int efx_test_nvram(struct efx_nic *efx, struct efx_self_tests *tests)
 
 	if (efx->type->test_nvram) {
 		rc = efx->type->test_nvram(efx);
-		if (rc == -EPERM)
-			rc = 0;
-		else
-			tests->nvram = rc ? -1 : 1;
+		tests->nvram = rc ? -1 : 1;
+	}
+
+	return rc;
+}
+
+static int efx_test_chip(struct efx_nic *efx, struct efx_self_tests *tests)
+{
+	int rc = 0;
+
+	/* Test register access */
+	if (efx->type->test_registers) {
+		rc = efx->type->test_registers(efx);
+		tests->registers = rc ? -1 : 1;
 	}
 
 	return rc;
@@ -135,19 +145,11 @@ static int efx_test_interrupts(struct efx_nic *efx,
 {
 	unsigned long timeout, wait;
 	int cpu;
-	int rc;
 
 	netif_dbg(efx, drv, efx->net_dev, "testing interrupts\n");
 	tests->interrupt = -1;
 
-	rc = efx_nic_irq_test_start(efx);
-	if (rc == -ENOTSUPP) {
-		netif_dbg(efx, drv, efx->net_dev,
-			  "direct interrupt testing not supported\n");
-		tests->interrupt = 0;
-		return 0;
-	}
-
+	efx_nic_irq_test_start(efx);
 	timeout = jiffies + IRQ_TIMEOUT;
 	wait = 1;
 
@@ -199,7 +201,7 @@ static int efx_test_eventq_irq(struct efx_nic *efx,
 		schedule_timeout_uninterruptible(wait);
 
 		efx_for_each_channel(channel, efx) {
-			efx_stop_eventq(channel);
+			napi_disable(&channel->napi_str);
 			if (channel->eventq_read_ptr !=
 			    read_ptr[channel->channel]) {
 				set_bit(channel->channel, &napi_ran);
@@ -211,7 +213,8 @@ static int efx_test_eventq_irq(struct efx_nic *efx,
 				if (efx_nic_event_test_irq_cpu(channel) >= 0)
 					clear_bit(channel->channel, &int_pend);
 			}
-			efx_start_eventq(channel);
+			napi_enable(&channel->napi_str);
+			efx_nic_eventq_read_ack(channel);
 		}
 
 		wait *= 2;
@@ -264,12 +267,6 @@ static int efx_test_phy(struct efx_nic *efx, struct efx_self_tests *tests,
 	mutex_lock(&efx->mac_lock);
 	rc = efx->phy_op->run_tests(efx, tests->phy_ext, flags);
 	mutex_unlock(&efx->mac_lock);
-	if (rc == -EPERM)
-		rc = 0;
-	else
-		netif_info(efx, drv, efx->net_dev,
-			   "%s phy selftest\n", rc ? "Failed" : "Passed");
-
 	return rc;
 }
 
@@ -382,14 +379,14 @@ static void efx_iterate_state(struct efx_nic *efx)
 	struct efx_loopback_payload *payload = &state->payload;
 
 	/* Initialise the layerII header */
-	ether_addr_copy((u8 *)&payload->header.h_dest, net_dev->dev_addr);
-	ether_addr_copy((u8 *)&payload->header.h_source, payload_source);
+	memcpy(&payload->header.h_dest, net_dev->dev_addr, ETH_ALEN);
+	memcpy(&payload->header.h_source, &payload_source, ETH_ALEN);
 	payload->header.h_proto = htons(ETH_P_IP);
 
 	/* saddr set later and used as incrementing count */
 	payload->ip.daddr = htonl(INADDR_LOOPBACK);
 	payload->ip.ihl = 5;
-	payload->ip.check = (__force __sum16) htons(0xdead);
+	payload->ip.check = htons(0xdead);
 	payload->ip.tot_len = htons(sizeof(*payload) - sizeof(struct ethhdr));
 	payload->ip.version = IPVERSION;
 	payload->ip.protocol = IPPROTO_UDP;
@@ -463,7 +460,14 @@ static int efx_begin_loopback(struct efx_tx_queue *tx_queue)
 static int efx_poll_loopback(struct efx_nic *efx)
 {
 	struct efx_loopback_state *state = efx->loopback_selftest;
+	struct efx_channel *channel;
 
+	/* NAPI polling is not enabled, so process channels
+	 * synchronously */
+	efx_for_each_channel(channel, efx) {
+		if (channel->work_pending)
+			efx_process_channel_now(channel);
+	}
 	return atomic_read(&state->rx_good) == state->packet_count;
 }
 
@@ -484,7 +488,7 @@ static int efx_end_loopback(struct efx_tx_queue *tx_queue,
 		skb = state->skbs[i];
 		if (skb && !skb_shared(skb))
 			++tx_done;
-		dev_kfree_skb(skb);
+		dev_kfree_skb_any(skb);
 	}
 
 	netif_tx_unlock_bh(efx->net_dev);
@@ -595,6 +599,10 @@ static int efx_wait_for_link(struct efx_nic *efx)
 			mutex_lock(&efx->mac_lock);
 			efx->type->monitor(efx);
 			mutex_unlock(&efx->mac_lock);
+		} else {
+			struct efx_channel *channel = efx_get_channel(efx, 0);
+			if (channel->work_pending)
+				efx_process_channel_now(channel);
 		}
 
 		mutex_lock(&efx->mac_lock);
@@ -619,8 +627,7 @@ static int efx_test_loopbacks(struct efx_nic *efx, struct efx_self_tests *tests,
 {
 	enum efx_loopback_mode mode;
 	struct efx_loopback_state *state;
-	struct efx_channel *channel =
-		efx_get_channel(efx, efx->tx_channel_offset);
+	struct efx_channel *channel = efx_get_channel(efx, 0);
 	struct efx_tx_queue *tx_queue;
 	int rc = 0;
 
@@ -678,9 +685,6 @@ static int efx_test_loopbacks(struct efx_nic *efx, struct efx_self_tests *tests,
 	wmb();
 	kfree(state);
 
-	if (rc == -EPERM)
-		rc = 0;
-
 	return rc;
 }
 
@@ -695,7 +699,8 @@ int efx_selftest(struct efx_nic *efx, struct efx_self_tests *tests,
 {
 	enum efx_loopback_mode loopback_mode = efx->loopback_mode;
 	int phy_mode = efx->phy_mode;
-	int rc_test = 0, rc_reset, rc;
+	enum reset_type reset_method = RESET_TYPE_INVISIBLE;
+	int rc_test = 0, rc_reset = 0, rc;
 
 	efx_selftest_async_cancel(efx);
 
@@ -730,28 +735,46 @@ int efx_selftest(struct efx_nic *efx, struct efx_self_tests *tests,
 	/* Detach the device so the kernel doesn't transmit during the
 	 * loopback test and the watchdog timeout doesn't fire.
 	 */
-	efx_device_detach_sync(efx);
+	netif_device_detach(efx->net_dev);
 
-	if (efx->type->test_chip) {
-		rc_reset = efx->type->test_chip(efx, tests);
-		if (rc_reset) {
-			netif_err(efx, hw, efx->net_dev,
-				  "Unable to recover from chip test\n");
-			efx_schedule_reset(efx, RESET_TYPE_DISABLE);
-			return rc_reset;
-		}
-
-		if ((tests->memory < 0 || tests->registers < 0) && !rc_test)
-			rc_test = -EIO;
+	mutex_lock(&efx->mac_lock);
+	if (efx->loopback_modes) {
+		/* We need the 312 clock from the PHY to test the XMAC
+		 * registers, so move into XGMII loopback if available */
+		if (efx->loopback_modes & (1 << LOOPBACK_XGMII))
+			efx->loopback_mode = LOOPBACK_XGMII;
+		else
+			efx->loopback_mode = __ffs(efx->loopback_modes);
 	}
+
+	__efx_reconfigure_port(efx);
+	mutex_unlock(&efx->mac_lock);
+
+	/* free up all consumers of SRAM (including all the queues) */
+	efx_reset_down(efx, reset_method);
+
+	rc = efx_test_chip(efx, tests);
+	if (rc && !rc_test)
+		rc_test = rc;
+
+	/* reset the chip to recover from the register test */
+	rc_reset = efx->type->reset(efx, reset_method);
 
 	/* Ensure that the phy is powered and out of loopback
 	 * for the bist and loopback tests */
-	mutex_lock(&efx->mac_lock);
 	efx->phy_mode &= ~PHY_MODE_LOW_POWER;
 	efx->loopback_mode = LOOPBACK_NONE;
-	__efx_reconfigure_port(efx);
-	mutex_unlock(&efx->mac_lock);
+
+	rc = efx_reset_up(efx, reset_method, rc_reset == 0);
+	if (rc && !rc_reset)
+		rc_reset = rc;
+
+	if (rc_reset) {
+		netif_err(efx, drv, efx->net_dev,
+			  "Unable to recover from chip test\n");
+		efx_schedule_reset(efx, RESET_TYPE_DISABLE);
+		return rc_reset;
+	}
 
 	rc = efx_test_phy(efx, tests, flags);
 	if (rc && !rc_test)

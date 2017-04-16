@@ -18,7 +18,6 @@
 #ifndef __LINUX_IF_PPPOPNS_H
 #define __LINUX_IF_PPPOPNS_H
 
-<<<<<<< HEAD
 #include <linux/socket.h>
 #include <linux/types.h>
 
@@ -29,8 +28,5 @@ struct sockaddr_pppopns {
 	__u16		local;
 	__u16		remote;
 } __attribute__((packed));
-=======
-#include <uapi/linux/if_pppopns.h>
->>>>>>> android-4.9
 
 #endif /* __LINUX_IF_PPPOPNS_H */

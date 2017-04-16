@@ -23,19 +23,17 @@
 
 extern FILE *yyin;
 extern int yyparse(void);
-extern YYLTYPE yylloc;
 
 struct boot_info *the_boot_info;
-bool treesource_error;
+int treesource_error;
 
 struct boot_info *dt_from_source(const char *fname)
 {
 	the_boot_info = NULL;
-	treesource_error = false;
+	treesource_error = 0;
 
 	srcfile_push(fname);
 	yyin = current_srcfile->f;
-	yylloc.file = current_srcfile;
 
 	if (yyparse() != 0)
 		die("Unable to parse input tree\n");
@@ -54,9 +52,9 @@ static void write_prefix(FILE *f, int level)
 		fputc('\t', f);
 }
 
-static bool isstring(char c)
+static int isstring(char c)
 {
-	return (isprint((unsigned char)c)
+	return (isprint(c)
 		|| (c == '\0')
 		|| strchr("\a\b\t\n\v\f\r", c));
 }
@@ -109,7 +107,7 @@ static void write_propval_string(FILE *f, struct data val)
 			break;
 		case '\0':
 			fprintf(f, "\", ");
-			while (m && (m->offset <= (i + 1))) {
+			while (m && (m->offset < i)) {
 				if (m->type == LABEL) {
 					assert(m->offset == (i+1));
 					fprintf(f, "%s: ", m->ref);
@@ -119,7 +117,7 @@ static void write_propval_string(FILE *f, struct data val)
 			fprintf(f, "\"");
 			break;
 		default:
-			if (isprint((unsigned char)c))
+			if (isprint(c))
 				fprintf(f, "%c", c);
 			else
 				fprintf(f, "\\x%02hhx", c);
@@ -178,7 +176,7 @@ static void write_propval_bytes(FILE *f, struct data val)
 			m = m->next;
 		}
 
-		fprintf(f, "%02hhx", (unsigned char)(*bp++));
+		fprintf(f, "%02hhx", *bp++);
 		if ((const void *)bp >= propend)
 			break;
 		fprintf(f, " ");

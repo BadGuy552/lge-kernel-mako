@@ -44,12 +44,8 @@ static int xfrm4_mode_tunnel_output(struct xfrm_state *x, struct sk_buff *skb)
 
 	top_iph->protocol = xfrm_af2proto(skb_dst(skb)->ops->family);
 
-	/* DS disclosing depends on XFRM_SA_XFLAG_DONT_ENCAP_DSCP */
-	if (x->props.extra_flags & XFRM_SA_XFLAG_DONT_ENCAP_DSCP)
-		top_iph->tos = 0;
-	else
-		top_iph->tos = XFRM_MODE_SKB_CB(skb)->tos;
-	top_iph->tos = INET_ECN_encapsulate(top_iph->tos,
+	/* DS disclosed */
+	top_iph->tos = INET_ECN_encapsulate(XFRM_MODE_SKB_CB(skb)->tos,
 					    XFRM_MODE_SKB_CB(skb)->tos);
 
 	flags = x->props.flags;
@@ -58,12 +54,12 @@ static int xfrm4_mode_tunnel_output(struct xfrm_state *x, struct sk_buff *skb)
 
 	top_iph->frag_off = (flags & XFRM_STATE_NOPMTUDISC) ?
 		0 : (XFRM_MODE_SKB_CB(skb)->frag_off & htons(IP_DF));
+	ip_select_ident(top_iph, dst->child, NULL);
 
 	top_iph->ttl = ip4_dst_hoplimit(dst->child);
 
 	top_iph->saddr = x->props.saddr.a4;
 	top_iph->daddr = x->id.daddr.a4;
-	ip_select_ident(dev_net(dst->dev), skb, NULL);
 
 	return 0;
 }
@@ -78,8 +74,8 @@ static int xfrm4_mode_tunnel_input(struct xfrm_state *x, struct sk_buff *skb)
 	if (!pskb_may_pull(skb, sizeof(struct iphdr)))
 		goto out;
 
-	err = skb_unclone(skb, GFP_ATOMIC);
-	if (err)
+	if (skb_cloned(skb) &&
+	    (err = pskb_expand_head(skb, 0, 0, GFP_ATOMIC)))
 		goto out;
 
 	if (x->props.flags & XFRM_STATE_DECAP_DSCP)

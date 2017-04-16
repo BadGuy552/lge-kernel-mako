@@ -48,14 +48,9 @@ All attributes are read-only.
 	manfid			Manufacturer ID (from CID Register)
 	name			Product Name (from CID Register)
 	oemid			OEM/Application ID (from CID Register)
-	prv			Product Revision (from CID Register) (SD and MMCv4 only)
 	serial			Product Serial Number (from CID Register)
 	erase_size		Erase group size
 	preferred_erase_size	Preferred erase size
-	raw_rpmb_size_mult	RPMB partition size
-	rel_sectors		Reliable write sector count
-	ocr 			Operation Conditions Register
-	dsr			Driver Stage Register
 
 Note on Erase Size and Preferred Erase Size:
 
@@ -96,7 +91,6 @@ Note on Erase Size and Preferred Erase Size:
 
 	"preferred_erase_size" is in bytes.
 
-<<<<<<< HEAD
 SD/MMC/SDIO Clock Gating Attribute
 ==================================
 
@@ -144,9 +138,3 @@ echo <desired value> > /sys/class/mmc_host/mmcX/clk_scaling/polling_interval
 echo <desired value> > /sys/class/mmc_host/mmcX/clk_scaling/up_threshold
 echo <desired value> > /sys/class/mmc_host/mmcX/clk_scaling/down_threshold
 echo <desired value> > /sys/class/mmc_host/mmcX/clk_scaling/enable
-=======
-Note on raw_rpmb_size_mult:
-	"raw_rpmb_size_mult" is a mutliple of 128kB block.
-	RPMB size in byte is calculated by using the following equation:
-	RPMB partition size = 128kB x raw_rpmb_size_mult
->>>>>>> android-4.9

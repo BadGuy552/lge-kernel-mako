@@ -14,11 +14,9 @@
 
 #include <linux/limits.h>
 #include <linux/ioctl.h>
-#include <linux/compat.h>
 
-#include "uapi/ashmem.h"
+#define ASHMEM_NAME_LEN		256
 
-<<<<<<< HEAD:include/linux/ashmem.h
 #define ASHMEM_NAME_DEF		"dev/ashmem"
 
 /* Return values from ASHMEM_PIN: Was the mapping purged while unpinned? */
@@ -53,12 +51,5 @@ struct ashmem_pin {
 int get_ashmem_file(int fd, struct file **filp, struct file **vm_file,
 			unsigned long *len);
 void put_ashmem_file(struct file *file);
-=======
-/* support of 32bit userspace on 64bit platforms */
-#ifdef CONFIG_COMPAT
-#define COMPAT_ASHMEM_SET_SIZE		_IOW(__ASHMEMIOC, 3, compat_size_t)
-#define COMPAT_ASHMEM_SET_PROT_MASK	_IOW(__ASHMEMIOC, 5, unsigned int)
-#endif
->>>>>>> android-4.9:drivers/staging/android/ashmem.h
 
 #endif	/* _LINUX_ASHMEM_H */

@@ -10,7 +10,6 @@
 #include <linux/pm.h>
 #include <linux/spi/spi.h>
 #include <linux/module.h>
-#include <linux/of.h>
 
 #include "ad7879.h"
 
@@ -111,7 +110,7 @@ static const struct ad7879_bus_ops ad7879_spi_bus_ops = {
 	.write		= ad7879_spi_write,
 };
 
-static int ad7879_spi_probe(struct spi_device *spi)
+static int __devinit ad7879_spi_probe(struct spi_device *spi)
 {
 	struct ad7879 *ts;
 	int err;
@@ -138,31 +137,24 @@ static int ad7879_spi_probe(struct spi_device *spi)
 	return 0;
 }
 
-static int ad7879_spi_remove(struct spi_device *spi)
+static int __devexit ad7879_spi_remove(struct spi_device *spi)
 {
 	struct ad7879 *ts = spi_get_drvdata(spi);
 
 	ad7879_remove(ts);
+	spi_set_drvdata(spi, NULL);
 
 	return 0;
 }
 
-#ifdef CONFIG_OF
-static const struct of_device_id ad7879_spi_dt_ids[] = {
-	{ .compatible = "adi,ad7879", },
-	{ }
-};
-MODULE_DEVICE_TABLE(of, ad7879_spi_dt_ids);
-#endif
-
 static struct spi_driver ad7879_spi_driver = {
 	.driver = {
 		.name	= "ad7879",
+		.owner	= THIS_MODULE,
 		.pm	= &ad7879_pm_ops,
-		.of_match_table = of_match_ptr(ad7879_spi_dt_ids),
 	},
 	.probe		= ad7879_spi_probe,
-	.remove		= ad7879_spi_remove,
+	.remove		= __devexit_p(ad7879_spi_remove),
 };
 
 module_spi_driver(ad7879_spi_driver);

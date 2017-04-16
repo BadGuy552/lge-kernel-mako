@@ -21,12 +21,9 @@
 #include <linux/cpu.h>
 #include <linux/seq_file.h>
 #include <linux/irq.h>
-#include <linux/nmi.h>
 #include <linux/percpu.h>
 #include <linux/clockchips.h>
 #include <linux/completion.h>
-#include <linux/cpufreq.h>
-#include <linux/irq_work.h>
 
 #include <linux/atomic.h>
 #include <asm/smp.h>
@@ -43,17 +40,9 @@
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
 #include <asm/ptrace.h>
+#include <asm/localtimer.h>
 #include <asm/smp_plat.h>
-<<<<<<< HEAD
 #include <asm/mach/arch.h>
-=======
-#include <asm/virt.h>
-#include <asm/mach/arch.h>
-#include <asm/mpu.h>
-
-#define CREATE_TRACE_POINTS
-#include <trace/events/ipi.h>
->>>>>>> android-4.9
 
 /*
  * as from 2.5, kernels no longer have an init_tasks structure
@@ -62,40 +51,18 @@
  */
 struct secondary_data secondary_data;
 
-/*
- * control for which core is the next to come out of the secondary
- * boot "holding pen"
- */
-volatile int pen_release = -1;
-
 enum ipi_msg_type {
-<<<<<<< HEAD
 	IPI_CPU_START = 1,
 	IPI_TIMER = 2,
-=======
-	IPI_WAKEUP,
-	IPI_TIMER,
->>>>>>> android-4.9
 	IPI_RESCHEDULE,
 	IPI_CALL_FUNC,
+	IPI_CALL_FUNC_SINGLE,
 	IPI_CPU_STOP,
-<<<<<<< HEAD
 	IPI_CPU_BACKTRACE,
-=======
-	IPI_IRQ_WORK,
-	IPI_COMPLETION,
-	IPI_CPU_BACKTRACE,
-	/*
-	 * SGI8-15 can be reserved by secure firmware, and thus may
-	 * not be usable by the kernel. Please keep the above limited
-	 * to at most 8 entries.
-	 */
->>>>>>> android-4.9
 };
 
 static DECLARE_COMPLETION(cpu_running);
 
-<<<<<<< HEAD
 static struct smp_operations smp_ops;
 
 void __init smp_set_ops(struct smp_operations *ops)
@@ -107,51 +74,21 @@ void __init smp_set_ops(struct smp_operations *ops)
 int __cpuinit __cpu_up(unsigned int cpu, struct task_struct *idle)
 {
 	int ret;
-=======
-static struct smp_operations smp_ops __ro_after_init;
-
-void __init smp_set_ops(const struct smp_operations *ops)
-{
-	if (ops)
-		smp_ops = *ops;
-};
-
-static unsigned long get_arch_pgd(pgd_t *pgd)
-{
-#ifdef CONFIG_ARM_LPAE
-	return __phys_to_pfn(virt_to_phys(pgd));
-#else
-	return virt_to_phys(pgd);
-#endif
-}
-
-int __cpu_up(unsigned int cpu, struct task_struct *idle)
-{
-	int ret;
-
-	if (!smp_ops.smp_boot_secondary)
-		return -ENOSYS;
->>>>>>> android-4.9
 
 	/*
 	 * We need to tell the secondary core where to find
 	 * its stack and the page tables.
 	 */
 	secondary_data.stack = task_stack_page(idle) + THREAD_START_SP;
-#ifdef CONFIG_ARM_MPU
-	secondary_data.mpu_rgn_szr = mpu_rgn_info.rgns[MPU_RAM_REGION].drsr;
-#endif
-
-#ifdef CONFIG_MMU
 	secondary_data.pgdir = virt_to_phys(idmap_pgd);
-	secondary_data.swapper_pg_dir = get_arch_pgd(swapper_pg_dir);
-#endif
-	sync_cache_w(&secondary_data);
+	secondary_data.swapper_pg_dir = virt_to_phys(swapper_pg_dir);
+	__cpuc_flush_dcache_area(&secondary_data, sizeof(secondary_data));
+	outer_clean_range(__pa(&secondary_data), __pa(&secondary_data + 1));
 
 	/*
 	 * Now bring the CPU into our world.
 	 */
-	ret = smp_ops.smp_boot_secondary(cpu, idle);
+	ret = boot_secondary(cpu, idle);
 	if (ret == 0) {
 		/*
 		 * CPU was successfully started, wait for it
@@ -168,23 +105,19 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 		pr_err("CPU%u: failed to boot: %d\n", cpu, ret);
 	}
 
+	secondary_data.stack = NULL;
+	secondary_data.pgdir = 0;
 
-	memset(&secondary_data, 0, sizeof(secondary_data));
 	return ret;
 }
 
 /* platform specific SMP operations */
-<<<<<<< HEAD
 void __attribute__((weak)) __init smp_init_cpus(void)
-=======
-void __init smp_init_cpus(void)
->>>>>>> android-4.9
 {
 	if (smp_ops.smp_init_cpus)
 		smp_ops.smp_init_cpus();
 }
 
-<<<<<<< HEAD
 void __attribute__((weak)) __init platform_smp_prepare_cpus(unsigned int max_cpus)
 {
 	if (smp_ops.smp_prepare_cpus)
@@ -202,55 +135,10 @@ int __attribute__((weak)) __cpuinit boot_secondary(unsigned int cpu, struct task
 	if (smp_ops.smp_boot_secondary)
 		return smp_ops.smp_boot_secondary(cpu, idle);
 	return -ENOSYS;
-=======
-int platform_can_secondary_boot(void)
-{
-	return !!smp_ops.smp_boot_secondary;
-}
-
-int platform_can_cpu_hotplug(void)
-{
-#ifdef CONFIG_HOTPLUG_CPU
-	if (smp_ops.cpu_kill)
-		return 1;
-#endif
-
-	return 0;
->>>>>>> android-4.9
 }
 
 #ifdef CONFIG_HOTPLUG_CPU
-static int platform_cpu_kill(unsigned int cpu)
-{
-	if (smp_ops.cpu_kill)
-		return smp_ops.cpu_kill(cpu);
-	return 1;
-}
-
-static int platform_cpu_disable(unsigned int cpu)
-{
-	if (smp_ops.cpu_disable)
-		return smp_ops.cpu_disable(cpu);
-
-	return 0;
-}
-
-int platform_can_hotplug_cpu(unsigned int cpu)
-{
-	/* cpu_die must be specified to support hotplug */
-	if (!smp_ops.cpu_die)
-		return 0;
-
-	if (smp_ops.cpu_can_disable)
-		return smp_ops.cpu_can_disable(cpu);
-
-	/*
-	 * By default, allow disabling all CPUs except the first one,
-	 * since this is special on a lot of platforms, e.g. because
-	 * of clock tick interrupts.
-	 */
-	return cpu != 0;
-}
+static void percpu_timer_stop(void);
 
 int __attribute__((weak)) platform_cpu_kill(unsigned int cpu)
 {
@@ -284,6 +172,7 @@ int __attribute__((weak)) platform_cpu_disable(unsigned int cpu)
 int __cpu_disable(void)
 {
 	unsigned int cpu = smp_processor_id();
+	struct task_struct *p;
 	int ret;
 
 	ret = platform_cpu_disable(cpu);
@@ -302,6 +191,11 @@ int __cpu_disable(void)
 	migrate_irqs();
 
 	/*
+	 * Stop the local timer for this CPU.
+	 */
+	percpu_timer_stop();
+
+	/*
 	 * Flush user cache and TLB mappings, and then remove this CPU
 	 * from the vm mask set of all processes.
 	 *
@@ -311,7 +205,12 @@ int __cpu_disable(void)
 	flush_cache_louis();
 	local_flush_tlb_all();
 
-	clear_tasks_mm_cpumask(cpu);
+	read_lock(&tasklist_lock);
+	for_each_process(p) {
+		if (p->mm)
+			cpumask_clear_cpu(cpu, mm_cpumask(p->mm));
+	}
+	read_unlock(&tasklist_lock);
 
 	return 0;
 }
@@ -328,11 +227,7 @@ void __cpu_die(unsigned int cpu)
 		pr_err("CPU%u: cpu didn't die\n", cpu);
 		return;
 	}
-<<<<<<< HEAD
 	pr_debug("CPU%u: shutdown\n", cpu);
-=======
-	pr_notice("CPU%u: shutdown\n", cpu);
->>>>>>> android-4.9
 
 	/*
 	 * platform_cpu_kill() is generally expected to do the powering off
@@ -342,7 +237,7 @@ void __cpu_die(unsigned int cpu)
 	 * the requesting CPU and the dying CPU actually losing power.
 	 */
 	if (!platform_cpu_kill(cpu))
-		pr_err("CPU%u: unable to kill\n", cpu);
+		printk("CPU%u: unable to kill\n", cpu);
 }
 
 /*
@@ -353,7 +248,7 @@ void __cpu_die(unsigned int cpu)
  * of the other hotplug-cpu capable cores, so presumably coming
  * out of idle fixes this.
  */
-void arch_cpu_idle_dead(void)
+void __ref cpu_die(void)
 {
 	unsigned int cpu = smp_processor_id();
 
@@ -396,11 +291,7 @@ void arch_cpu_idle_dead(void)
 	 * The return path should not be used for platforms which can
 	 * power off the CPU.
 	 */
-	if (smp_ops.cpu_die)
-		smp_ops.cpu_die(cpu);
-
-	pr_warn("CPU%u: smp_ops.cpu_die() returned, trying to resuscitate\n",
-		cpu);
+	platform_cpu_die(cpu);
 
 	/*
 	 * Do not return to the idle loop - jump back to the secondary
@@ -419,12 +310,11 @@ void arch_cpu_idle_dead(void)
  * Called by both boot and secondaries to move global data into
  * per-processor storage.
  */
-static void smp_store_cpu_info(unsigned int cpuid)
+static void __cpuinit smp_store_cpu_info(unsigned int cpuid)
 {
 	struct cpuinfo_arm *cpu_info = &per_cpu(cpu_data, cpuid);
 
 	cpu_info->loops_per_jiffy = loops_per_jiffy;
-	cpu_info->cpuid = read_cpuid_id();
 
 	store_cpu_topology(cpuid);
 }
@@ -433,7 +323,7 @@ static void smp_store_cpu_info(unsigned int cpuid)
  * This is the secondary CPU boot entry.  We're using this CPUs
  * idle thread stack, but a set of temporary page tables.
  */
-asmlinkage void secondary_start_kernel(void)
+asmlinkage void __cpuinit secondary_start_kernel(void)
 {
 	struct mm_struct *mm = &init_mm;
 	unsigned int cpu;
@@ -466,8 +356,7 @@ asmlinkage void secondary_start_kernel(void)
 	/*
 	 * Give the platform a chance to do its own initialisation.
 	 */
-	if (smp_ops.smp_secondary_init)
-		smp_ops.smp_secondary_init(cpu);
+	platform_secondary_init(cpu);
 
 	notify_cpu_starting(cpu);
 
@@ -483,14 +372,18 @@ asmlinkage void secondary_start_kernel(void)
 	set_cpu_online(cpu, true);
 	complete(&cpu_running);
 
+	/*
+	 * Setup the percpu timer for this CPU.
+	 */
+	percpu_timer_setup();
+
 	local_irq_enable();
 	local_fiq_enable();
-	local_abt_enable();
 
 	/*
 	 * OK, it's off to the idle thread for us
 	 */
-	cpu_startup_entry(CPUHP_AP_ONLINE_IDLE);
+	cpu_idle();
 }
 
 void __init smp_cpus_done(unsigned int max_cpus)
@@ -506,8 +399,6 @@ void __init smp_cpus_done(unsigned int max_cpus)
 	       num_online_cpus(),
 	       bogosum / (500000/HZ),
 	       (bogosum / (5000/HZ)) % 100);
-
-	hyp_mode_check();
 }
 
 void __init smp_prepare_boot_cpu(void)
@@ -530,10 +421,16 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 		max_cpus = ncores;
 	if (ncores > 1 && max_cpus) {
 		/*
+		 * Enable the local timer or broadcast device for the
+		 * boot CPU, but only if we have more than one CPU.
+		 */
+		percpu_timer_setup();
+
+		/*
 		 * Initialise the present map, which describes the set of CPUs
 		 * actually populated at the present time. A platform should
-		 * re-initialize the map in the platforms smp_prepare_cpus()
-		 * if present != possible (e.g. physical hotplug).
+		 * re-initialize the map in platform_smp_prepare_cpus() if
+		 * present != possible (e.g. physical hotplug).
 		 */
 		init_cpu_present(cpu_possible_mask);
 
@@ -541,20 +438,17 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 		 * Initialise the SCU if there are more than one CPU
 		 * and let them know where to start.
 		 */
-		if (smp_ops.smp_prepare_cpus)
-			smp_ops.smp_prepare_cpus(max_cpus);
+		platform_smp_prepare_cpus(max_cpus);
 	}
 }
 
-static void (*__smp_cross_call)(const struct cpumask *, unsigned int);
+static void (*smp_cross_call)(const struct cpumask *, unsigned int);
 
 void __init set_smp_cross_call(void (*fn)(const struct cpumask *, unsigned int))
 {
-	if (!__smp_cross_call)
-		__smp_cross_call = fn;
+	smp_cross_call = fn;
 }
 
-<<<<<<< HEAD
 void arch_send_call_function_ipi_mask(const struct cpumask *mask)
 {
 	smp_cross_call(mask, IPI_CALL_FUNC);
@@ -568,28 +462,13 @@ void arch_send_call_function_single_ipi(int cpu)
 static const char *ipi_types[NR_IPI] = {
 #define S(x,s)	[x - IPI_CPU_START] = s
 	S(IPI_CPU_START, "CPU start interrupts"),
-=======
-static const char *ipi_types[NR_IPI] __tracepoint_string = {
-#define S(x,s)	[x] = s
-	S(IPI_WAKEUP, "CPU wakeup interrupts"),
->>>>>>> android-4.9
 	S(IPI_TIMER, "Timer broadcast interrupts"),
 	S(IPI_RESCHEDULE, "Rescheduling interrupts"),
 	S(IPI_CALL_FUNC, "Function call interrupts"),
+	S(IPI_CALL_FUNC_SINGLE, "Single function call interrupts"),
 	S(IPI_CPU_STOP, "CPU stop interrupts"),
-<<<<<<< HEAD
 	S(IPI_CPU_BACKTRACE, "CPU backtrace"),
-=======
-	S(IPI_IRQ_WORK, "IRQ work interrupts"),
-	S(IPI_COMPLETION, "completion interrupts"),
->>>>>>> android-4.9
 };
-
-static void smp_cross_call(const struct cpumask *target, unsigned int ipinr)
-{
-	trace_ipi_raise_rcuidle(target, ipi_types[ipinr]);
-	__smp_cross_call(target, ipinr);
-}
 
 void show_ipi_list(struct seq_file *p, int prec)
 {
@@ -598,7 +477,7 @@ void show_ipi_list(struct seq_file *p, int prec)
 	for (i = 0; i < NR_IPI; i++) {
 		seq_printf(p, "%*s%u: ", prec - 1, "IPI", i);
 
-		for_each_online_cpu(cpu)
+		for_each_present_cpu(cpu)
 			seq_printf(p, "%10u ",
 				   __get_irq_stat(cpu, ipi_irqs[i]));
 
@@ -617,30 +496,57 @@ u64 smp_irq_stat_cpu(unsigned int cpu)
 	return sum;
 }
 
-void arch_send_call_function_ipi_mask(const struct cpumask *mask)
+/*
+ * Timer (local or broadcast) support
+ */
+static DEFINE_PER_CPU(struct clock_event_device, percpu_clockevent);
+
+static void ipi_timer(void)
 {
-	smp_cross_call(mask, IPI_CALL_FUNC);
+	struct clock_event_device *evt = &__get_cpu_var(percpu_clockevent);
+	evt->event_handler(evt);
 }
 
-void arch_send_wakeup_ipi_mask(const struct cpumask *mask)
+#ifdef CONFIG_GENERIC_CLOCKEVENTS_BROADCAST
+static void smp_timer_broadcast(const struct cpumask *mask)
 {
-	smp_cross_call(mask, IPI_WAKEUP);
+	smp_cross_call(mask, IPI_TIMER);
+}
+#else
+#define smp_timer_broadcast	NULL
+#endif
+
+static void broadcast_timer_set_mode(enum clock_event_mode mode,
+	struct clock_event_device *evt)
+{
 }
 
-void arch_send_call_function_single_ipi(int cpu)
+static void __cpuinit broadcast_timer_setup(struct clock_event_device *evt)
 {
-	smp_cross_call(cpumask_of(cpu), IPI_CALL_FUNC);
+	evt->name	= "dummy_timer";
+	evt->features	= CLOCK_EVT_FEAT_ONESHOT |
+			  CLOCK_EVT_FEAT_PERIODIC |
+			  CLOCK_EVT_FEAT_DUMMY;
+	evt->rating	= 400;
+	evt->mult	= 1;
+	evt->set_mode	= broadcast_timer_set_mode;
+
+	clockevents_register_device(evt);
 }
 
-#ifdef CONFIG_IRQ_WORK
-void arch_irq_work_raise(void)
+static struct local_timer_ops *lt_ops;
+
+#ifdef CONFIG_LOCAL_TIMERS
+int local_timer_register(struct local_timer_ops *ops)
 {
-	if (arch_irq_work_has_interrupt())
-		smp_cross_call(cpumask_of(smp_processor_id()), IPI_IRQ_WORK);
+	if (lt_ops)
+		return -EBUSY;
+
+	lt_ops = ops;
+	return 0;
 }
 #endif
 
-<<<<<<< HEAD
 void __cpuinit percpu_timer_setup(void)
 {
 	unsigned int cpu = smp_processor_id();
@@ -660,12 +566,12 @@ void __cpuinit percpu_timer_setup(void)
  * manually here.
  */
 static void percpu_timer_stop(void)
-=======
-#ifdef CONFIG_GENERIC_CLOCKEVENTS_BROADCAST
-void tick_broadcast(const struct cpumask *mask)
->>>>>>> android-4.9
 {
-	smp_cross_call(mask, IPI_TIMER);
+	unsigned int cpu = smp_processor_id();
+	struct clock_event_device *evt = &per_cpu(percpu_clockevent, cpu);
+
+	if (lt_ops)
+		lt_ops->stop(evt);
 }
 #endif
 
@@ -681,7 +587,7 @@ static void ipi_cpu_stop(unsigned int cpu, struct pt_regs *regs)
 	    system_state == SYSTEM_RUNNING) {
 		per_cpu(regs_before_stop, cpu) = *regs;
 		raw_spin_lock(&stop_lock);
-		pr_crit("CPU%u: stopping\n", cpu);
+		printk(KERN_CRIT "CPU%u: stopping\n", cpu);
 		dump_stack();
 		raw_spin_unlock(&stop_lock);
 	}
@@ -697,7 +603,6 @@ static void ipi_cpu_stop(unsigned int cpu, struct pt_regs *regs)
 		cpu_relax();
 }
 
-<<<<<<< HEAD
 static cpumask_t backtrace_mask;
 static DEFINE_RAW_SPINLOCK(backtrace_lock);
 
@@ -749,19 +654,6 @@ static void ipi_cpu_backtrace(unsigned int cpu, struct pt_regs *regs)
 		raw_spin_unlock(&backtrace_lock);
 		cpu_clear(cpu, backtrace_mask);
 	}
-=======
-static DEFINE_PER_CPU(struct completion *, cpu_completion);
-
-int register_ipi_completion(struct completion *completion, int cpu)
-{
-	per_cpu(cpu_completion, cpu) = completion;
-	return IPI_COMPLETION;
-}
-
-static void ipi_complete(unsigned int cpu)
-{
-	complete(per_cpu(cpu_completion, cpu));
->>>>>>> android-4.9
 }
 
 /*
@@ -777,7 +669,6 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 	unsigned int cpu = smp_processor_id();
 	struct pt_regs *old_regs = set_irq_regs(regs);
 
-<<<<<<< HEAD
 	if (ipinr >= IPI_CPU_START && ipinr < IPI_CPU_START + NR_IPI)
 		__inc_irq_stat(cpu, ipi_irqs[ipinr - IPI_CPU_START]);
 
@@ -785,24 +676,11 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 	case IPI_CPU_START:
 		/* Wake up from WFI/WFE using SGI */
 		break;
-=======
-	if ((unsigned)ipinr < NR_IPI) {
-		trace_ipi_entry_rcuidle(ipi_types[ipinr]);
-		__inc_irq_stat(cpu, ipi_irqs[ipinr]);
-	}
-
-	switch (ipinr) {
-	case IPI_WAKEUP:
-		break;
-
-#ifdef CONFIG_GENERIC_CLOCKEVENTS_BROADCAST
->>>>>>> android-4.9
 	case IPI_TIMER:
 		irq_enter();
-		tick_receive_broadcast();
+		ipi_timer();
 		irq_exit();
 		break;
-#endif
 
 	case IPI_RESCHEDULE:
 		scheduler_ipi();
@@ -814,50 +692,27 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 		irq_exit();
 		break;
 
+	case IPI_CALL_FUNC_SINGLE:
+		irq_enter();
+		generic_smp_call_function_single_interrupt();
+		irq_exit();
+		break;
+
 	case IPI_CPU_STOP:
 		irq_enter();
-		ipi_cpu_stop(cpu);
-		irq_exit();
-		break;
-
-#ifdef CONFIG_IRQ_WORK
-	case IPI_IRQ_WORK:
-		irq_enter();
-<<<<<<< HEAD
 		ipi_cpu_stop(cpu, regs);
-=======
-		irq_work_run();
-		irq_exit();
-		break;
-#endif
-
-	case IPI_COMPLETION:
-		irq_enter();
-		ipi_complete(cpu);
->>>>>>> android-4.9
 		irq_exit();
 		break;
 
 	case IPI_CPU_BACKTRACE:
-<<<<<<< HEAD
 		ipi_cpu_backtrace(cpu, regs);
-=======
-		printk_nmi_enter();
-		irq_enter();
-		nmi_cpu_backtrace(regs);
-		irq_exit();
-		printk_nmi_exit();
->>>>>>> android-4.9
 		break;
 
 	default:
-		pr_crit("CPU%u: Unknown IPI message 0x%x\n",
-		        cpu, ipinr);
+		printk(KERN_CRIT "CPU%u: Unknown IPI message 0x%x\n",
+		       cpu, ipinr);
 		break;
 	}
-
-	if ((unsigned)ipinr < NR_IPI)
-		trace_ipi_exit_rcuidle(ipi_types[ipinr]);
 	set_irq_regs(old_regs);
 }
 
@@ -881,13 +736,8 @@ void smp_send_stop(void)
 	while (num_active_cpus() > 1 && timeout--)
 		udelay(1);
 
-<<<<<<< HEAD
 	if (num_active_cpus() > 1)
 		pr_warning("SMP: failed to stop secondary CPUs\n");
-=======
-	if (num_online_cpus() > 1)
-		pr_warn("SMP: failed to stop secondary CPUs\n");
->>>>>>> android-4.9
 }
 
 /*
@@ -896,66 +746,4 @@ void smp_send_stop(void)
 int setup_profiling_timer(unsigned int multiplier)
 {
 	return -EINVAL;
-}
-
-#ifdef CONFIG_CPU_FREQ
-
-static DEFINE_PER_CPU(unsigned long, l_p_j_ref);
-static DEFINE_PER_CPU(unsigned long, l_p_j_ref_freq);
-static unsigned long global_l_p_j_ref;
-static unsigned long global_l_p_j_ref_freq;
-
-static int cpufreq_callback(struct notifier_block *nb,
-					unsigned long val, void *data)
-{
-	struct cpufreq_freqs *freq = data;
-	int cpu = freq->cpu;
-
-	if (freq->flags & CPUFREQ_CONST_LOOPS)
-		return NOTIFY_OK;
-
-	if (!per_cpu(l_p_j_ref, cpu)) {
-		per_cpu(l_p_j_ref, cpu) =
-			per_cpu(cpu_data, cpu).loops_per_jiffy;
-		per_cpu(l_p_j_ref_freq, cpu) = freq->old;
-		if (!global_l_p_j_ref) {
-			global_l_p_j_ref = loops_per_jiffy;
-			global_l_p_j_ref_freq = freq->old;
-		}
-	}
-
-	if ((val == CPUFREQ_PRECHANGE  && freq->old < freq->new) ||
-	    (val == CPUFREQ_POSTCHANGE && freq->old > freq->new)) {
-		loops_per_jiffy = cpufreq_scale(global_l_p_j_ref,
-						global_l_p_j_ref_freq,
-						freq->new);
-		per_cpu(cpu_data, cpu).loops_per_jiffy =
-			cpufreq_scale(per_cpu(l_p_j_ref, cpu),
-					per_cpu(l_p_j_ref_freq, cpu),
-					freq->new);
-	}
-	return NOTIFY_OK;
-}
-
-static struct notifier_block cpufreq_notifier = {
-	.notifier_call  = cpufreq_callback,
-};
-
-static int __init register_cpufreq_notifier(void)
-{
-	return cpufreq_register_notifier(&cpufreq_notifier,
-						CPUFREQ_TRANSITION_NOTIFIER);
-}
-core_initcall(register_cpufreq_notifier);
-
-#endif
-
-static void raise_nmi(cpumask_t *mask)
-{
-	smp_cross_call(mask, IPI_CPU_BACKTRACE);
-}
-
-void arch_trigger_cpumask_backtrace(const cpumask_t *mask, bool exclude_self)
-{
-	nmi_trigger_cpumask_backtrace(mask, exclude_self, raise_nmi);
 }

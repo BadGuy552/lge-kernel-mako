@@ -22,8 +22,8 @@
  *
  */
 
-#include <sound/rawmidi.h>
-#include <sound/seq_midi_event.h>
+#include "rawmidi.h"
+#include "seq_midi_event.h"
 
 /*
  * device file instance:

@@ -6,7 +6,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2016, Intel Corp.
+ * Copyright (C) 2000 - 2012, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -45,6 +45,7 @@
 #include <acpi/acpi.h>
 #include <linux/acpi.h>
 #include "accommon.h"
+#include <linux/module.h>
 
 #define _COMPONENT          ACPI_HARDWARE
 ACPI_MODULE_NAME("hwsleep")
@@ -55,6 +56,7 @@ ACPI_MODULE_NAME("hwsleep")
  * FUNCTION:    acpi_hw_legacy_sleep
  *
  * PARAMETERS:  sleep_state         - Which sleep state to enter
+ *              Flags               - ACPI_EXECUTE_GTS to run optional method
  *
  * RETURN:      Status
  *
@@ -62,7 +64,7 @@ ACPI_MODULE_NAME("hwsleep")
  *              THIS FUNCTION MUST BE CALLED WITH INTERRUPTS DISABLED
  *
  ******************************************************************************/
-acpi_status acpi_hw_legacy_sleep(u8 sleep_state)
+acpi_status acpi_hw_legacy_sleep(u8 sleep_state, u8 flags)
 {
 	struct acpi_bit_register_info *sleep_type_reg_info;
 	struct acpi_bit_register_info *sleep_enable_reg_info;
@@ -80,8 +82,8 @@ acpi_status acpi_hw_legacy_sleep(u8 sleep_state)
 
 	/* Clear wake status */
 
-	status = acpi_write_bit_register(ACPI_BITREG_WAKE_STATUS,
-					 ACPI_CLEAR_STATUS);
+	status =
+	    acpi_write_bit_register(ACPI_BITREG_WAKE_STATUS, ACPI_CLEAR_STATUS);
 	if (ACPI_FAILURE(status)) {
 		return_ACPI_STATUS(status);
 	}
@@ -91,6 +93,18 @@ acpi_status acpi_hw_legacy_sleep(u8 sleep_state)
 	status = acpi_hw_clear_acpi_status();
 	if (ACPI_FAILURE(status)) {
 		return_ACPI_STATUS(status);
+	}
+
+	if (sleep_state != ACPI_STATE_S5) {
+		/*
+		 * Disable BM arbitration. This feature is contained within an
+		 * optional register (PM2 Control), so ignore a BAD_ADDRESS
+		 * exception.
+		 */
+		status = acpi_write_bit_register(ACPI_BITREG_ARB_DISABLE, 1);
+		if (ACPI_FAILURE(status) && (status != AE_BAD_ADDRESS)) {
+			return_ACPI_STATUS(status);
+		}
 	}
 
 	/*
@@ -106,6 +120,12 @@ acpi_status acpi_hw_legacy_sleep(u8 sleep_state)
 	status = acpi_hw_enable_all_wakeup_gpes();
 	if (ACPI_FAILURE(status)) {
 		return_ACPI_STATUS(status);
+	}
+
+	/* Optionally execute _GTS (Going To Sleep) */
+
+	if (flags & ACPI_EXECUTE_GTS) {
+		acpi_hw_execute_sleep_method(METHOD_PATHNAME__GTS, sleep_state);
 	}
 
 	/* Get current value of PM1A control */
@@ -177,7 +197,7 @@ acpi_status acpi_hw_legacy_sleep(u8 sleep_state)
 		 * to still read the right value. Ideally, this block would go
 		 * away entirely.
 		 */
-		acpi_os_stall(10 * ACPI_USEC_PER_SEC);
+		acpi_os_stall(10000000);
 
 		status = acpi_hw_register_write(ACPI_REGISTER_PM1_CONTROL,
 						sleep_enable_reg_info->
@@ -206,6 +226,7 @@ acpi_status acpi_hw_legacy_sleep(u8 sleep_state)
  * FUNCTION:    acpi_hw_legacy_wake_prep
  *
  * PARAMETERS:  sleep_state         - Which sleep state we just exited
+ *              Flags               - ACPI_EXECUTE_BFS to run optional method
  *
  * RETURN:      Status
  *
@@ -215,7 +236,7 @@ acpi_status acpi_hw_legacy_sleep(u8 sleep_state)
  *
  ******************************************************************************/
 
-acpi_status acpi_hw_legacy_wake_prep(u8 sleep_state)
+acpi_status acpi_hw_legacy_wake_prep(u8 sleep_state, u8 flags)
 {
 	acpi_status status;
 	struct acpi_bit_register_info *sleep_type_reg_info;
@@ -266,6 +287,11 @@ acpi_status acpi_hw_legacy_wake_prep(u8 sleep_state)
 		}
 	}
 
+	/* Optionally execute _BFS (Back From Sleep) */
+
+	if (flags & ACPI_EXECUTE_BFS) {
+		acpi_hw_execute_sleep_method(METHOD_PATHNAME__BFS, sleep_state);
+	}
 	return_ACPI_STATUS(status);
 }
 
@@ -274,6 +300,7 @@ acpi_status acpi_hw_legacy_wake_prep(u8 sleep_state)
  * FUNCTION:    acpi_hw_legacy_wake
  *
  * PARAMETERS:  sleep_state         - Which sleep state we just exited
+ *              Flags               - Reserved, set to zero
  *
  * RETURN:      Status
  *
@@ -282,7 +309,7 @@ acpi_status acpi_hw_legacy_wake_prep(u8 sleep_state)
  *
  ******************************************************************************/
 
-acpi_status acpi_hw_legacy_wake(u8 sleep_state)
+acpi_status acpi_hw_legacy_wake(u8 sleep_state, u8 flags)
 {
 	acpi_status status;
 
@@ -322,8 +349,7 @@ acpi_status acpi_hw_legacy_wake(u8 sleep_state)
 	 * and use it to determine whether the system is rebooting or
 	 * resuming. Clear WAK_STS for compatibility.
 	 */
-	(void)acpi_write_bit_register(ACPI_BITREG_WAKE_STATUS,
-				      ACPI_CLEAR_STATUS);
+	acpi_write_bit_register(ACPI_BITREG_WAKE_STATUS, 1);
 	acpi_gbl_system_awake_and_running = TRUE;
 
 	/* Enable power button */
@@ -337,6 +363,16 @@ acpi_status acpi_hw_legacy_wake(u8 sleep_state)
 	    acpi_write_bit_register(acpi_gbl_fixed_event_info
 				    [ACPI_EVENT_POWER_BUTTON].
 				    status_register_id, ACPI_CLEAR_STATUS);
+
+	/*
+	 * Enable BM arbitration. This feature is contained within an
+	 * optional register (PM2 Control), so ignore a BAD_ADDRESS
+	 * exception.
+	 */
+	status = acpi_write_bit_register(ACPI_BITREG_ARB_DISABLE, 0);
+	if (ACPI_FAILURE(status) && (status != AE_BAD_ADDRESS)) {
+		return_ACPI_STATUS(status);
+	}
 
 	acpi_hw_execute_sleep_method(METHOD_PATHNAME__SST, ACPI_SST_WORKING);
 	return_ACPI_STATUS(status);

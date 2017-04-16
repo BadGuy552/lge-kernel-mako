@@ -1,6 +1,6 @@
 /* ir-nec-decoder.c - handle NEC IR Pulse/Space protocol
  *
- * Copyright (C) 2010 by Mauro Carvalho Chehab
+ * Copyright (C) 2010 by Mauro Carvalho Chehab <mchehab@redhat.com>
  *
  * This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -49,9 +49,11 @@ static int ir_nec_decode(struct rc_dev *dev, struct ir_raw_event ev)
 {
 	struct nec_dec *data = &dev->raw->nec;
 	u32 scancode;
-	enum rc_type rc_type;
 	u8 address, not_address, command, not_command;
 	bool send_32bits = false;
+
+	if (!(dev->raw->enabled_protocols & RC_TYPE_NEC))
+		return 0;
 
 	if (!is_timing_event(ev)) {
 		if (ev.reset)
@@ -68,7 +70,7 @@ static int ir_nec_decode(struct rc_dev *dev, struct ir_raw_event ev)
 		if (!ev.pulse)
 			break;
 
-		if (eq_margin(ev.duration, NEC_HEADER_PULSE, NEC_UNIT * 2)) {
+		if (eq_margin(ev.duration, NEC_HEADER_PULSE, NEC_UNIT / 2)) {
 			data->is_nec_x = false;
 			data->necx_repeat = false;
 		} else if (eq_margin(ev.duration, NECX_HEADER_PULSE, NEC_UNIT / 2))
@@ -84,7 +86,7 @@ static int ir_nec_decode(struct rc_dev *dev, struct ir_raw_event ev)
 		if (ev.pulse)
 			break;
 
-		if (eq_margin(ev.duration, NEC_HEADER_SPACE, NEC_UNIT)) {
+		if (eq_margin(ev.duration, NEC_HEADER_SPACE, NEC_UNIT / 2)) {
 			data->state = STATE_BIT_PULSE;
 			return 0;
 		} else if (eq_margin(ev.duration, NEC_REPEAT_SPACE, NEC_UNIT / 2)) {
@@ -176,25 +178,22 @@ rc_data:
 			 * least Apple and TiVo remotes */
 			scancode = data->bits;
 			IR_dprintk(1, "NEC (modified) scancode 0x%08x\n", scancode);
-			rc_type = RC_TYPE_NEC32;
 		} else if ((address ^ not_address) != 0xff) {
 			/* Extended NEC */
 			scancode = address     << 16 |
 				   not_address <<  8 |
 				   command;
 			IR_dprintk(1, "NEC (Ext) scancode 0x%06x\n", scancode);
-			rc_type = RC_TYPE_NECX;
 		} else {
 			/* Normal NEC */
 			scancode = address << 8 | command;
 			IR_dprintk(1, "NEC scancode 0x%04x\n", scancode);
-			rc_type = RC_TYPE_NEC;
 		}
 
 		if (data->is_nec_x)
 			data->necx_repeat = true;
 
-		rc_keydown(dev, rc_type, scancode, 0);
+		rc_keydown(dev, scancode, 0);
 		data->state = STATE_INACTIVE;
 		return 0;
 	}
@@ -206,7 +205,7 @@ rc_data:
 }
 
 static struct ir_raw_handler nec_handler = {
-	.protocols	= RC_BIT_NEC | RC_BIT_NECX | RC_BIT_NEC32,
+	.protocols	= RC_TYPE_NEC,
 	.decode		= ir_nec_decode,
 };
 
@@ -227,6 +226,6 @@ module_init(ir_nec_decode_init);
 module_exit(ir_nec_decode_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Mauro Carvalho Chehab");
+MODULE_AUTHOR("Mauro Carvalho Chehab <mchehab@redhat.com>");
 MODULE_AUTHOR("Red Hat Inc. (http://www.redhat.com)");
 MODULE_DESCRIPTION("NEC IR protocol decoder");

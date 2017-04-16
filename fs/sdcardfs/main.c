@@ -28,14 +28,9 @@ enum {
 	Opt_fsgid,
 	Opt_gid,
 	Opt_debug,
-<<<<<<< HEAD
 	Opt_lower_fs,
 	Opt_mask,
 	Opt_multiuser, // May need?
-=======
-	Opt_mask,
-	Opt_multiuser,
->>>>>>> android-4.9
 	Opt_userid,
 	Opt_reserved_mb,
 	Opt_err,
@@ -54,12 +49,7 @@ static const match_table_t sdcardfs_tokens = {
 };
 
 static int parse_options(struct super_block *sb, char *options, int silent,
-<<<<<<< HEAD
 				int *debug, struct sdcardfs_mount_options *opts)
-=======
-				int *debug, struct sdcardfs_vfsmount_options *vfsopts,
-				struct sdcardfs_mount_options *opts)
->>>>>>> android-4.9
 {
 	char *p;
 	substring_t args[MAX_OPT_ARGS];
@@ -68,17 +58,10 @@ static int parse_options(struct super_block *sb, char *options, int silent,
 	/* by default, we use AID_MEDIA_RW as uid, gid */
 	opts->fs_low_uid = AID_MEDIA_RW;
 	opts->fs_low_gid = AID_MEDIA_RW;
-<<<<<<< HEAD
 	opts->mask = 0;
 	opts->multiuser = false;
 	opts->fs_user_id = 0;
 	opts->gid = 0;
-=======
-	vfsopts->mask = 0;
-	opts->multiuser = false;
-	opts->fs_user_id = 0;
-	vfsopts->gid = 0;
->>>>>>> android-4.9
 	/* by default, 0MB is reserved */
 	opts->reserved_mb = 0;
 
@@ -89,10 +72,6 @@ static int parse_options(struct super_block *sb, char *options, int silent,
 
 	while ((p = strsep(&options, ",")) != NULL) {
 		int token;
-<<<<<<< HEAD
-=======
-
->>>>>>> android-4.9
 		if (!*p)
 			continue;
 
@@ -115,11 +94,7 @@ static int parse_options(struct super_block *sb, char *options, int silent,
 		case Opt_gid:
 			if (match_int(&args[0], &option))
 				return 0;
-<<<<<<< HEAD
 			opts->gid = option;
-=======
-			vfsopts->gid = option;
->>>>>>> android-4.9
 			break;
 		case Opt_userid:
 			if (match_int(&args[0], &option))
@@ -129,11 +104,7 @@ static int parse_options(struct super_block *sb, char *options, int silent,
 		case Opt_mask:
 			if (match_int(&args[0], &option))
 				return 0;
-<<<<<<< HEAD
 			opts->mask = option;
-=======
-			vfsopts->mask = option;
->>>>>>> android-4.9
 			break;
 		case Opt_multiuser:
 			opts->multiuser = true;
@@ -145,98 +116,25 @@ static int parse_options(struct super_block *sb, char *options, int silent,
 			break;
 		/* unknown option */
 		default:
-<<<<<<< HEAD
 			if (!silent) {
 				printk( KERN_ERR "Unrecognized mount option \"%s\" "
 						"or missing value", p);
 			}
-=======
-			if (!silent)
-				pr_err("Unrecognized mount option \"%s\" or missing value", p);
->>>>>>> android-4.9
 			return -EINVAL;
 		}
 	}
 
 	if (*debug) {
-<<<<<<< HEAD
 		printk( KERN_INFO "sdcardfs : options - debug:%d\n", *debug);
 		printk( KERN_INFO "sdcardfs : options - uid:%d\n",
 							opts->fs_low_uid);
 		printk( KERN_INFO "sdcardfs : options - gid:%d\n",
-=======
-		pr_info("sdcardfs : options - debug:%d\n", *debug);
-		pr_info("sdcardfs : options - uid:%d\n",
-							opts->fs_low_uid);
-		pr_info("sdcardfs : options - gid:%d\n",
->>>>>>> android-4.9
 							opts->fs_low_gid);
 	}
 
 	return 0;
 }
 
-<<<<<<< HEAD
-=======
-int parse_options_remount(struct super_block *sb, char *options, int silent,
-				struct sdcardfs_vfsmount_options *vfsopts)
-{
-	char *p;
-	substring_t args[MAX_OPT_ARGS];
-	int option;
-	int debug;
-
-	if (!options)
-		return 0;
-
-	while ((p = strsep(&options, ",")) != NULL) {
-		int token;
-
-		if (!*p)
-			continue;
-
-		token = match_token(p, sdcardfs_tokens, args);
-
-		switch (token) {
-		case Opt_debug:
-			debug = 1;
-			break;
-		case Opt_gid:
-			if (match_int(&args[0], &option))
-				return 0;
-			vfsopts->gid = option;
-
-			break;
-		case Opt_mask:
-			if (match_int(&args[0], &option))
-				return 0;
-			vfsopts->mask = option;
-			break;
-		case Opt_multiuser:
-		case Opt_userid:
-		case Opt_fsuid:
-		case Opt_fsgid:
-		case Opt_reserved_mb:
-			pr_warn("Option \"%s\" can't be changed during remount\n", p);
-			break;
-		/* unknown option */
-		default:
-			if (!silent)
-				pr_err("Unrecognized mount option \"%s\" or missing value", p);
-			return -EINVAL;
-		}
-	}
-
-	if (debug) {
-		pr_info("sdcardfs : options - debug:%d\n", debug);
-		pr_info("sdcardfs : options - gid:%d\n", vfsopts->gid);
-		pr_info("sdcardfs : options - mask:%d\n", vfsopts->mask);
-	}
-
-	return 0;
-}
-
->>>>>>> android-4.9
 #if 0
 /*
  * our custom d_alloc_root work-alike
@@ -266,33 +164,22 @@ static struct dentry *sdcardfs_d_alloc_root(struct super_block *sb)
 #endif
 
 DEFINE_MUTEX(sdcardfs_super_list_lock);
-<<<<<<< HEAD
 LIST_HEAD(sdcardfs_super_list);
 EXPORT_SYMBOL_GPL(sdcardfs_super_list_lock);
-=======
-EXPORT_SYMBOL_GPL(sdcardfs_super_list_lock);
-LIST_HEAD(sdcardfs_super_list);
->>>>>>> android-4.9
 EXPORT_SYMBOL_GPL(sdcardfs_super_list);
 
 /*
  * There is no need to lock the sdcardfs_super_info's rwsem as there is no
  * way anyone can have a reference to the superblock at this point in time.
  */
-<<<<<<< HEAD
 static int sdcardfs_read_super(struct super_block *sb, const char *dev_name,
 						void *raw_data, int silent)
-=======
-static int sdcardfs_read_super(struct vfsmount *mnt, struct super_block *sb,
-		const char *dev_name, void *raw_data, int silent)
->>>>>>> android-4.9
 {
 	int err = 0;
 	int debug;
 	struct super_block *lower_sb;
 	struct path lower_path;
 	struct sdcardfs_sb_info *sb_info;
-<<<<<<< HEAD
 	struct inode *inode;
 
 	printk(KERN_INFO "sdcardfs version 2.0\n");
@@ -300,63 +187,34 @@ static int sdcardfs_read_super(struct vfsmount *mnt, struct super_block *sb,
 	if (!dev_name) {
 		printk(KERN_ERR
 		       "sdcardfs: read_super: missing dev_name argument\n");
-=======
-	struct sdcardfs_vfsmount_options *mnt_opt = mnt->data;
-	struct inode *inode;
-
-	pr_info("sdcardfs version 2.0\n");
-
-	if (!dev_name) {
-		pr_err("sdcardfs: read_super: missing dev_name argument\n");
->>>>>>> android-4.9
 		err = -EINVAL;
 		goto out;
 	}
 
-<<<<<<< HEAD
 	printk(KERN_INFO "sdcardfs: dev_name -> %s\n", dev_name);
 	printk(KERN_INFO "sdcardfs: options -> %s\n", (char *)raw_data);
-=======
-	pr_info("sdcardfs: dev_name -> %s\n", dev_name);
-	pr_info("sdcardfs: options -> %s\n", (char *)raw_data);
-	pr_info("sdcardfs: mnt -> %p\n", mnt);
->>>>>>> android-4.9
 
 	/* parse lower path */
 	err = kern_path(dev_name, LOOKUP_FOLLOW | LOOKUP_DIRECTORY,
 			&lower_path);
 	if (err) {
-<<<<<<< HEAD
 		printk(KERN_ERR	"sdcardfs: error accessing lower directory '%s'\n", dev_name);
-=======
-		pr_err("sdcardfs: error accessing lower directory '%s'\n", dev_name);
->>>>>>> android-4.9
 		goto out;
 	}
 
 	/* allocate superblock private data */
 	sb->s_fs_info = kzalloc(sizeof(struct sdcardfs_sb_info), GFP_KERNEL);
 	if (!SDCARDFS_SB(sb)) {
-<<<<<<< HEAD
 		printk(KERN_CRIT "sdcardfs: read_super: out of memory\n");
-=======
-		pr_crit("sdcardfs: read_super: out of memory\n");
->>>>>>> android-4.9
 		err = -ENOMEM;
 		goto out_free;
 	}
 
 	sb_info = sb->s_fs_info;
 	/* parse options */
-<<<<<<< HEAD
 	err = parse_options(sb, raw_data, silent, &debug, &sb_info->options);
 	if (err) {
 		printk(KERN_ERR	"sdcardfs: invalid options\n");
-=======
-	err = parse_options(sb, raw_data, silent, &debug, mnt_opt, &sb_info->options);
-	if (err) {
-		pr_err("sdcardfs: invalid options\n");
->>>>>>> android-4.9
 		goto out_freesbi;
 	}
 
@@ -378,27 +236,16 @@ static int sdcardfs_read_super(struct vfsmount *mnt, struct super_block *sb,
 	sb->s_op = &sdcardfs_sops;
 
 	/* get a new inode and allocate our root dentry */
-<<<<<<< HEAD
 	inode = sdcardfs_iget(sb, lower_path.dentry->d_inode, 0);
-=======
-	inode = sdcardfs_iget(sb, d_inode(lower_path.dentry), 0);
->>>>>>> android-4.9
 	if (IS_ERR(inode)) {
 		err = PTR_ERR(inode);
 		goto out_sput;
 	}
 	sb->s_root = d_make_root(inode);
-<<<<<<< HEAD
  	if (!sb->s_root) {
  		err = -ENOMEM;
 		goto out_iput;
  	}
-=======
-	if (!sb->s_root) {
-		err = -ENOMEM;
-		goto out_iput;
-	}
->>>>>>> android-4.9
 	d_set_d_op(sb->s_root, &sdcardfs_ci_dops);
 
 	/* link the upper and lower dentries */
@@ -420,7 +267,6 @@ static int sdcardfs_read_super(struct vfsmount *mnt, struct super_block *sb,
 	/* setup permission policy */
 	sb_info->obbpath_s = kzalloc(PATH_MAX, GFP_KERNEL);
 	mutex_lock(&sdcardfs_super_list_lock);
-<<<<<<< HEAD
 	if(sb_info->options.multiuser) {
 		setup_derived_state(sb->s_root->d_inode, PERM_PRE_ROOT, sb_info->options.fs_user_id, AID_ROOT, false, sb->s_root->d_inode);
 		snprintf(sb_info->obbpath_s, PATH_MAX, "%s/obb", dev_name);
@@ -432,30 +278,12 @@ static int sdcardfs_read_super(struct vfsmount *mnt, struct super_block *sb,
 		snprintf(sb_info->obbpath_s, PATH_MAX, "%s/Android/obb", dev_name);
 	}
 	fix_derived_permission(sb->s_root->d_inode);
-=======
-	if (sb_info->options.multiuser) {
-		setup_derived_state(d_inode(sb->s_root), PERM_PRE_ROOT,
-					sb_info->options.fs_user_id, AID_ROOT,
-					false, d_inode(sb->s_root));
-		snprintf(sb_info->obbpath_s, PATH_MAX, "%s/obb", dev_name);
-	} else {
-		setup_derived_state(d_inode(sb->s_root), PERM_ROOT,
-					sb_info->options.fs_user_id, AID_ROOT,
-					false, d_inode(sb->s_root));
-		snprintf(sb_info->obbpath_s, PATH_MAX, "%s/Android/obb", dev_name);
-	}
-	fixup_tmp_permissions(d_inode(sb->s_root));
->>>>>>> android-4.9
 	sb_info->sb = sb;
 	list_add(&sb_info->list, &sdcardfs_super_list);
 	mutex_unlock(&sdcardfs_super_list_lock);
 
 	if (!silent)
-<<<<<<< HEAD
 		printk(KERN_INFO "sdcardfs: mounted on top of %s type %s\n",
-=======
-		pr_info("sdcardfs: mounted on top of %s type %s\n",
->>>>>>> android-4.9
 				dev_name, lower_sb->s_type->name);
 	goto out; /* all is well */
 
@@ -478,7 +306,6 @@ out:
 }
 
 /* A feature which supports mount_nodev() with options */
-<<<<<<< HEAD
 static struct dentry *mount_nodev_with_options(struct file_system_type *fs_type,
         int flags, const char *dev_name, void *data,
         int (*fill_super)(struct super_block *, const char *, void *, int))
@@ -486,28 +313,13 @@ static struct dentry *mount_nodev_with_options(struct file_system_type *fs_type,
 {
 	int error;
 	struct super_block *s = sget(fs_type, NULL, set_anon_super, NULL);
-=======
-static struct dentry *mount_nodev_with_options(struct vfsmount *mnt,
-			struct file_system_type *fs_type, int flags,
-			const char *dev_name, void *data,
-			int (*fill_super)(struct vfsmount *, struct super_block *,
-						const char *, void *, int))
-
-{
-	int error;
-	struct super_block *s = sget(fs_type, NULL, set_anon_super, flags, NULL);
->>>>>>> android-4.9
 
 	if (IS_ERR(s))
 		return ERR_CAST(s);
 
 	s->s_flags = flags;
 
-<<<<<<< HEAD
 	error = fill_super(s, dev_name, data, flags & MS_SILENT ? 1 : 0);
-=======
-	error = fill_super(mnt, s, dev_name, data, flags & MS_SILENT ? 1 : 0);
->>>>>>> android-4.9
 	if (error) {
 		deactivate_locked_super(s);
 		return ERR_PTR(error);
@@ -516,47 +328,19 @@ static struct dentry *mount_nodev_with_options(struct vfsmount *mnt,
 	return dget(s->s_root);
 }
 
-<<<<<<< HEAD
 struct dentry *sdcardfs_mount(struct file_system_type *fs_type, int flags,
-=======
-static struct dentry *sdcardfs_mount(struct vfsmount *mnt,
-		struct file_system_type *fs_type, int flags,
->>>>>>> android-4.9
 			    const char *dev_name, void *raw_data)
 {
 	/*
 	 * dev_name is a lower_path_name,
 	 * raw_data is a option string.
 	 */
-<<<<<<< HEAD
 	return mount_nodev_with_options(fs_type, flags, dev_name,
 					raw_data, sdcardfs_read_super);
 }
 
 void sdcardfs_kill_sb(struct super_block *sb) {
 	struct sdcardfs_sb_info *sbi;
-=======
-	return mount_nodev_with_options(mnt, fs_type, flags, dev_name,
-						raw_data, sdcardfs_read_super);
-}
-
-static struct dentry *sdcardfs_mount_wrn(struct file_system_type *fs_type,
-		    int flags, const char *dev_name, void *raw_data)
-{
-	WARN(1, "sdcardfs does not support mount. Use mount2.\n");
-	return ERR_PTR(-EINVAL);
-}
-
-void *sdcardfs_alloc_mnt_data(void)
-{
-	return kmalloc(sizeof(struct sdcardfs_vfsmount_options), GFP_KERNEL);
-}
-
-void sdcardfs_kill_sb(struct super_block *sb)
-{
-	struct sdcardfs_sb_info *sbi;
-
->>>>>>> android-4.9
 	if (sb->s_magic == SDCARDFS_SUPER_MAGIC) {
 		sbi = SDCARDFS_SB(sb);
 		mutex_lock(&sdcardfs_super_list_lock);
@@ -569,20 +353,10 @@ void sdcardfs_kill_sb(struct super_block *sb)
 static struct file_system_type sdcardfs_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= SDCARDFS_NAME,
-<<<<<<< HEAD
 	.mount		= sdcardfs_mount,
 	.kill_sb	= sdcardfs_kill_sb,
 	.fs_flags	= 0,
 };
-=======
-	.mount		= sdcardfs_mount_wrn,
-	.mount2		= sdcardfs_mount,
-	.alloc_mnt_data = sdcardfs_alloc_mnt_data,
-	.kill_sb	= sdcardfs_kill_sb,
-	.fs_flags	= 0,
-};
-MODULE_ALIAS_FS(SDCARDFS_NAME);
->>>>>>> android-4.9
 
 static int __init init_sdcardfs_fs(void)
 {
@@ -618,22 +392,10 @@ static void __exit exit_sdcardfs_fs(void)
 	pr_info("Completed sdcardfs module unload\n");
 }
 
-<<<<<<< HEAD
 MODULE_AUTHOR("Erez Zadok, Filesystems and Storage Lab, Stony Brook University"
 	      " (http://www.fsl.cs.sunysb.edu/)");
 MODULE_DESCRIPTION("Wrapfs " SDCARDFS_VERSION
 		   " (http://wrapfs.filesystems.org/)");
-=======
-/* Original wrapfs authors */
-MODULE_AUTHOR("Erez Zadok, Filesystems and Storage Lab, Stony Brook University (http://www.fsl.cs.sunysb.edu/)");
-
-/* Original sdcardfs authors */
-MODULE_AUTHOR("Woojoong Lee, Daeho Jeong, Kitae Lee, Yeongjin Gil System Memory Lab., Samsung Electronics");
-
-/* Current maintainer */
-MODULE_AUTHOR("Daniel Rosenberg, Google");
-MODULE_DESCRIPTION("Sdcardfs " SDCARDFS_VERSION);
->>>>>>> android-4.9
 MODULE_LICENSE("GPL");
 
 module_init(init_sdcardfs_fs);

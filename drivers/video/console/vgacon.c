@@ -42,7 +42,6 @@
 #include <linux/kd.h>
 #include <linux/slab.h>
 #include <linux/vt_kern.h>
-#include <linux/sched.h>
 #include <linux/selection.h>
 #include <linux/spinlock.h>
 #include <linux/ioport.h>
@@ -56,7 +55,7 @@ static int cursor_size_lastfrom;
 static int cursor_size_lastto;
 static u32 vgacon_xres;
 static u32 vgacon_yres;
-static struct vgastate vgastate;
+static struct vgastate state;
 
 #define BLANK 0x0020
 
@@ -80,14 +79,14 @@ static void vgacon_deinit(struct vc_data *c);
 static void vgacon_cursor(struct vc_data *c, int mode);
 static int vgacon_switch(struct vc_data *c);
 static int vgacon_blank(struct vc_data *c, int blank, int mode_switch);
-static void vgacon_scrolldelta(struct vc_data *c, int lines);
+static int vgacon_set_palette(struct vc_data *vc, unsigned char *table);
+static int vgacon_scrolldelta(struct vc_data *c, int lines);
 static int vgacon_set_origin(struct vc_data *c);
 static void vgacon_save_screen(struct vc_data *c);
 static int vgacon_scroll(struct vc_data *c, int t, int b, int dir,
 			 int lines);
 static void vgacon_invert_region(struct vc_data *c, u16 * p, int count);
-static struct uni_pagedir *vgacon_uni_pagedir;
-static int vgacon_refcount;
+static unsigned long vgacon_uni_pagedir[2];
 
 /* Description of the hardware situation */
 static int		vga_init_done		__read_mostly;
@@ -248,18 +247,18 @@ static void vgacon_restore_screen(struct vc_data *c)
 	}
 }
 
-static void vgacon_scrolldelta(struct vc_data *c, int lines)
+static int vgacon_scrolldelta(struct vc_data *c, int lines)
 {
 	int start, end, count, soff;
 
 	if (!lines) {
 		c->vc_visible_origin = c->vc_origin;
 		vga_set_mem_top(c);
-		return;
+		return 1;
 	}
 
 	if (!vgacon_scrollback)
-		return;
+		return 1;
 
 	if (!vgacon_scrollback_save) {
 		vgacon_cursor(c, CM_ERASE);
@@ -320,6 +319,8 @@ static void vgacon_scrolldelta(struct vc_data *c, int lines)
 			scr_memcpyw(d, s, diff * c->vc_size_row);
 	} else
 		vgacon_cursor(c, CM_MOVE);
+
+	return 1;
 }
 #else
 #define vgacon_scrollback_startup(...) do { } while (0)
@@ -332,7 +333,7 @@ static void vgacon_restore_screen(struct vc_data *c)
 		vgacon_scrolldelta(c, 0);
 }
 
-static void vgacon_scrolldelta(struct vc_data *c, int lines)
+static int vgacon_scrolldelta(struct vc_data *c, int lines)
 {
 	if (!lines)		/* Turn scrollback off */
 		c->vc_visible_origin = c->vc_origin;
@@ -360,6 +361,7 @@ static void vgacon_scrolldelta(struct vc_data *c, int lines)
 		c->vc_visible_origin = vga_vram_base + (p + ul) % we;
 	}
 	vga_set_mem_top(c);
+	return 1;
 }
 #endif /* CONFIG_VGACON_SOFT_SCROLLBACK */
 
@@ -396,7 +398,7 @@ static const char *vgacon_startup(void)
 
 	vga_video_num_lines = screen_info.orig_video_lines;
 	vga_video_num_columns = screen_info.orig_video_cols;
-	vgastate.vgabase = NULL;
+	state.vgabase = NULL;
 
 	if (screen_info.orig_video_mode == 7) {
 		/* Monochrome display */
@@ -550,7 +552,7 @@ static const char *vgacon_startup(void)
 
 static void vgacon_init(struct vc_data *c, int init)
 {
-	struct uni_pagedir *p;
+	unsigned long p;
 
 	/*
 	 * We cannot be loaded as a module, therefore init is always 1,
@@ -572,12 +574,12 @@ static void vgacon_init(struct vc_data *c, int init)
 	if (vga_512_chars)
 		c->vc_hi_font_mask = 0x0800;
 	p = *c->vc_uni_pagedir_loc;
-	if (c->vc_uni_pagedir_loc != &vgacon_uni_pagedir) {
+	if (c->vc_uni_pagedir_loc == &c->vc_uni_pagedir ||
+	    !--c->vc_uni_pagedir_loc[1])
 		con_free_unimap(c);
-		c->vc_uni_pagedir_loc = &vgacon_uni_pagedir;
-		vgacon_refcount++;
-	}
-	if (!vgacon_uni_pagedir && p)
+	c->vc_uni_pagedir_loc = vgacon_uni_pagedir;
+	vgacon_uni_pagedir[1]++;
+	if (!vgacon_uni_pagedir[0] && p)
 		con_set_default_unimap(c);
 
 	/* Only set the default if the user didn't deliberately override it */
@@ -589,12 +591,12 @@ static void vgacon_init(struct vc_data *c, int init)
 static void vgacon_deinit(struct vc_data *c)
 {
 	/* When closing the active console, reset video origin */
-	if (con_is_visible(c)) {
+	if (CON_IS_VISIBLE(c)) {
 		c->vc_visible_origin = vga_vram_base;
 		vga_set_mem_top(c);
 	}
 
-	if (!--vgacon_refcount)
+	if (!--vgacon_uni_pagedir[1])
 		con_free_unimap(c);
 	c->vc_uni_pagedir_loc = &c->vc_uni_pagedir;
 	con_set_default_unimap(c);
@@ -843,26 +845,29 @@ static int vgacon_switch(struct vc_data *c)
 	return 0;		/* Redrawing not needed */
 }
 
-static void vga_set_palette(struct vc_data *vc, const unsigned char *table)
+static void vga_set_palette(struct vc_data *vc, unsigned char *table)
 {
 	int i, j;
 
-	vga_w(vgastate.vgabase, VGA_PEL_MSK, 0xff);
+	vga_w(state.vgabase, VGA_PEL_MSK, 0xff);
 	for (i = j = 0; i < 16; i++) {
-		vga_w(vgastate.vgabase, VGA_PEL_IW, table[i]);
-		vga_w(vgastate.vgabase, VGA_PEL_D, vc->vc_palette[j++] >> 2);
-		vga_w(vgastate.vgabase, VGA_PEL_D, vc->vc_palette[j++] >> 2);
-		vga_w(vgastate.vgabase, VGA_PEL_D, vc->vc_palette[j++] >> 2);
+		vga_w(state.vgabase, VGA_PEL_IW, table[i]);
+		vga_w(state.vgabase, VGA_PEL_D, vc->vc_palette[j++] >> 2);
+		vga_w(state.vgabase, VGA_PEL_D, vc->vc_palette[j++] >> 2);
+		vga_w(state.vgabase, VGA_PEL_D, vc->vc_palette[j++] >> 2);
 	}
 }
 
-static void vgacon_set_palette(struct vc_data *vc, const unsigned char *table)
+static int vgacon_set_palette(struct vc_data *vc, unsigned char *table)
 {
 #ifdef CAN_LOAD_PALETTE
 	if (vga_video_type != VIDEO_TYPE_VGAC || vga_palette_blanked
-	    || !con_is_visible(vc))
-		return;
+	    || !CON_IS_VISIBLE(vc))
+		return -EINVAL;
 	vga_set_palette(vc, table);
+	return 0;
+#else
+	return -EINVAL;
 #endif
 }
 
@@ -1001,7 +1006,7 @@ static int vgacon_blank(struct vc_data *c, int blank, int mode_switch)
 	switch (blank) {
 	case 0:		/* Unblank */
 		if (vga_vesa_blanked) {
-			vga_vesa_unblank(&vgastate);
+			vga_vesa_unblank(&state);
 			vga_vesa_blanked = 0;
 		}
 		if (vga_palette_blanked) {
@@ -1015,7 +1020,7 @@ static int vgacon_blank(struct vc_data *c, int blank, int mode_switch)
 	case 1:		/* Normal blanking */
 	case -1:	/* Obsolete */
 		if (!mode_switch && vga_video_type == VIDEO_TYPE_VGAC) {
-			vga_pal_blank(&vgastate);
+			vga_pal_blank(&state);
 			vga_palette_blanked = 1;
 			return 0;
 		}
@@ -1027,7 +1032,7 @@ static int vgacon_blank(struct vc_data *c, int blank, int mode_switch)
 		return 1;
 	default:		/* VESA blanking */
 		if (vga_video_type == VIDEO_TYPE_VGAC) {
-			vga_vesa_blank(&vgastate, blank - 1);
+			vga_vesa_blank(&state, blank - 1);
 			vga_vesa_blanked = blank;
 		}
 		return 0;
@@ -1059,7 +1064,7 @@ static int vgacon_do_font_op(struct vgastate *state,char *arg,int set,int ch512)
 	unsigned short video_port_status = vga_video_port_reg + 6;
 	int font_select = 0x00, beg, i;
 	char *charmap;
-	bool clear_attribs = false;
+	
 	if (vga_video_type != VIDEO_TYPE_EGAM) {
 		charmap = (char *) VGA_MAP_MEM(colourmap, 0);
 		beg = 0x0e;
@@ -1119,15 +1124,11 @@ static int vgacon_do_font_op(struct vgastate *state,char *arg,int set,int ch512)
 
 	if (arg) {
 		if (set)
-			for (i = 0; i < cmapsz; i++) {
+			for (i = 0; i < cmapsz; i++)
 				vga_writeb(arg[i], charmap + i);
-				cond_resched();
-			}
 		else
-			for (i = 0; i < cmapsz; i++) {
+			for (i = 0; i < cmapsz; i++)
 				arg[i] = vga_readb(charmap + i);
-				cond_resched();
-			}
 
 		/*
 		 * In 512-character mode, the character map is not contiguous if
@@ -1138,15 +1139,11 @@ static int vgacon_do_font_op(struct vgastate *state,char *arg,int set,int ch512)
 			charmap += 2 * cmapsz;
 			arg += cmapsz;
 			if (set)
-				for (i = 0; i < cmapsz; i++) {
+				for (i = 0; i < cmapsz; i++)
 					vga_writeb(arg[i], charmap + i);
-					cond_resched();
-				}
 			else
-				for (i = 0; i < cmapsz; i++) {
+				for (i = 0; i < cmapsz; i++)
 					arg[i] = vga_readb(charmap + i);
-					cond_resched();
-				}
 		}
 	}
 
@@ -1172,6 +1169,12 @@ static int vgacon_do_font_op(struct vgastate *state,char *arg,int set,int ch512)
 
 	/* if 512 char mode is already enabled don't re-enable it. */
 	if ((set) && (ch512 != vga_512_chars)) {
+		/* attribute controller */
+		for (i = 0; i < MAX_NR_CONSOLES; i++) {
+			struct vc_data *c = vc_cons[i].d;
+			if (c && c->vc_sw == &vga_con)
+				c->vc_hi_font_mask = ch512 ? 0x0800 : 0;
+		}
 		vga_512_chars = ch512;
 		/* 256-char: enable intensity bit
 		   512-char: disable intensity bit */
@@ -1182,22 +1185,8 @@ static int vgacon_do_font_op(struct vgastate *state,char *arg,int set,int ch512)
 		   it means, but it works, and it appears necessary */
 		inb_p(video_port_status);
 		vga_wattr(state->vgabase, VGA_AR_ENABLE_DISPLAY, 0);	
-		clear_attribs = true;
 	}
 	raw_spin_unlock_irq(&vga_lock);
-
-	if (clear_attribs) {
-		for (i = 0; i < MAX_NR_CONSOLES; i++) {
-			struct vc_data *c = vc_cons[i].d;
-			if (c && c->vc_sw == &vga_con) {
-				/* force hi font mask to 0, so we always clear
-				   the bit on either transition */
-				c->vc_hi_font_mask = 0x00;
-				clear_buffer_attributes(c);
-				c->vc_hi_font_mask = ch512 ? 0x0800 : 0;
-			}
-		}
-	}
 	return 0;
 }
 
@@ -1248,7 +1237,7 @@ static int vgacon_adjust_height(struct vc_data *vc, unsigned fontheight)
 		struct vc_data *c = vc_cons[i].d;
 
 		if (c && c->vc_sw == &vga_con) {
-			if (con_is_visible(c)) {
+			if (CON_IS_VISIBLE(c)) {
 			        /* void size to cause regs to be rewritten */
 				cursor_size_lastfrom = 0;
 				cursor_size_lastto = 0;
@@ -1273,7 +1262,7 @@ static int vgacon_font_set(struct vc_data *c, struct console_font *font, unsigne
 	    (charcount != 256 && charcount != 512))
 		return -EINVAL;
 
-	rc = vgacon_do_font_op(&vgastate, font->data, 1, charcount == 512);
+	rc = vgacon_do_font_op(&state, font->data, 1, charcount == 512);
 	if (rc)
 		return rc;
 
@@ -1292,7 +1281,7 @@ static int vgacon_font_get(struct vc_data *c, struct console_font *font)
 	font->charcount = vga_512_chars ? 512 : 256;
 	if (!font->data)
 		return 0;
-	return vgacon_do_font_op(&vgastate, font->data, 0, vga_512_chars);
+	return vgacon_do_font_op(&state, font->data, 0, vga_512_chars);
 }
 
 #else
@@ -1312,7 +1301,7 @@ static int vgacon_resize(struct vc_data *c, unsigned int width,
 		   return success */
 		return (user) ? 0 : -EINVAL;
 
-	if (con_is_visible(c) && !vga_is_gfx) /* who knows */
+	if (CON_IS_VISIBLE(c) && !vga_is_gfx) /* who knows */
 		vgacon_doresize(c, width, height);
 	return 0;
 }
@@ -1421,6 +1410,7 @@ const struct consw vga_con = {
 	.con_putcs = DUMMY,
 	.con_cursor = vgacon_cursor,
 	.con_scroll = vgacon_scroll,
+	.con_bmove = DUMMY,
 	.con_switch = vgacon_switch,
 	.con_blank = vgacon_blank,
 	.con_font_set = vgacon_font_set,
@@ -1433,6 +1423,5 @@ const struct consw vga_con = {
 	.con_build_attr = vgacon_build_attr,
 	.con_invert_region = vgacon_invert_region,
 };
-EXPORT_SYMBOL(vga_con);
 
 MODULE_LICENSE("GPL");

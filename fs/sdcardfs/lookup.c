@@ -36,12 +36,8 @@ int sdcardfs_init_dentry_cache(void)
 
 void sdcardfs_destroy_dentry_cache(void)
 {
-<<<<<<< HEAD
 	if (sdcardfs_dentry_cachep)
 		kmem_cache_destroy(sdcardfs_dentry_cachep);
-=======
-	kmem_cache_destroy(sdcardfs_dentry_cachep);
->>>>>>> android-4.9
 }
 
 void free_dentry_private_data(struct dentry *dentry)
@@ -77,10 +73,6 @@ static int sdcardfs_inode_test(struct inode *inode, void *candidate_data/*void *
 {
 	struct inode *current_lower_inode = sdcardfs_lower_inode(inode);
 	userid_t current_userid = SDCARDFS_I(inode)->userid;
-<<<<<<< HEAD
-=======
-
->>>>>>> android-4.9
 	if (current_lower_inode == ((struct inode_data *)candidate_data)->lower_inode &&
 			current_userid == ((struct inode_data *)candidate_data)->id)
 		return 1; /* found a match */
@@ -110,11 +102,7 @@ struct inode *sdcardfs_iget(struct super_block *sb, struct inode *lower_inode, u
 			      * instead.
 			      */
 			     lower_inode->i_ino, /* hashval */
-<<<<<<< HEAD
 			     sdcardfs_inode_test,	/* inode comparison function */
-=======
-			     sdcardfs_inode_test, /* inode comparison function */
->>>>>>> android-4.9
 			     sdcardfs_inode_set, /* inode init function */
 			     &data); /* data passed to test+set fxns */
 	if (!inode) {
@@ -176,7 +164,6 @@ struct inode *sdcardfs_iget(struct super_block *sb, struct inode *lower_inode, u
 }
 
 /*
-<<<<<<< HEAD
  * Connect a sdcardfs inode dentry/inode with several lower ones.  This is
  * the classic stackable file system "vnode interposition" action.
  *
@@ -193,31 +180,11 @@ int sdcardfs_interpose(struct dentry *dentry, struct super_block *sb,
 	struct super_block *lower_sb;
 
 	lower_inode = lower_path->dentry->d_inode;
-=======
- * Helper interpose routine, called directly by ->lookup to handle
- * spliced dentries.
- */
-static struct dentry *__sdcardfs_interpose(struct dentry *dentry,
-					 struct super_block *sb,
-					 struct path *lower_path,
-					 userid_t id)
-{
-	struct inode *inode;
-	struct inode *lower_inode;
-	struct super_block *lower_sb;
-	struct dentry *ret_dentry;
-
-	lower_inode = d_inode(lower_path->dentry);
->>>>>>> android-4.9
 	lower_sb = sdcardfs_lower_super(sb);
 
 	/* check that the lower file system didn't cross a mount point */
 	if (lower_inode->i_sb != lower_sb) {
-<<<<<<< HEAD
 		err = -EXDEV;
-=======
-		ret_dentry = ERR_PTR(-EXDEV);
->>>>>>> android-4.9
 		goto out;
 	}
 
@@ -229,7 +196,6 @@ static struct dentry *__sdcardfs_interpose(struct dentry *dentry,
 	/* inherit lower inode number for sdcardfs's inode */
 	inode = sdcardfs_iget(sb, lower_inode, id);
 	if (IS_ERR(inode)) {
-<<<<<<< HEAD
 		err = PTR_ERR(inode);
 		goto out;
 	}
@@ -238,56 +204,6 @@ static struct dentry *__sdcardfs_interpose(struct dentry *dentry,
 	update_derived_permission_lock(dentry);
 out:
 	return err;
-=======
-		ret_dentry = ERR_CAST(inode);
-		goto out;
-	}
-
-	ret_dentry = d_splice_alias(inode, dentry);
-	dentry = ret_dentry ?: dentry;
-	update_derived_permission_lock(dentry);
-out:
-	return ret_dentry;
-}
-
-/*
- * Connect an sdcardfs inode dentry/inode with several lower ones.  This is
- * the classic stackable file system "vnode interposition" action.
- *
- * @dentry: sdcardfs's dentry which interposes on lower one
- * @sb: sdcardfs's super_block
- * @lower_path: the lower path (caller does path_get/put)
- */
-int sdcardfs_interpose(struct dentry *dentry, struct super_block *sb,
-		     struct path *lower_path, userid_t id)
-{
-	struct dentry *ret_dentry;
-
-	ret_dentry = __sdcardfs_interpose(dentry, sb, lower_path, id);
-	return PTR_ERR(ret_dentry);
-}
-
-struct sdcardfs_name_data {
-	struct dir_context ctx;
-	const struct qstr *to_find;
-	char *name;
-	bool found;
-};
-
-static int sdcardfs_name_match(struct dir_context *ctx, const char *name,
-		int namelen, loff_t offset, u64 ino, unsigned int d_type)
-{
-	struct sdcardfs_name_data *buf = container_of(ctx, struct sdcardfs_name_data, ctx);
-	struct qstr candidate = QSTR_INIT(name, namelen);
-
-	if (qstr_case_eq(buf->to_find, &candidate)) {
-		memcpy(buf->name, name, namelen);
-		buf->name[namelen] = 0;
-		buf->found = true;
-		return 1;
-	}
-	return 0;
->>>>>>> android-4.9
 }
 
 /*
@@ -297,26 +213,15 @@ static int sdcardfs_name_match(struct dir_context *ctx, const char *name,
  * Fills in lower_parent_path with <dentry,mnt> on success.
  */
 static struct dentry *__sdcardfs_lookup(struct dentry *dentry,
-<<<<<<< HEAD
 		struct nameidata *nd, struct path *lower_parent_path, userid_t id)
-=======
-		unsigned int flags, struct path *lower_parent_path, userid_t id)
->>>>>>> android-4.9
 {
 	int err = 0;
 	struct vfsmount *lower_dir_mnt;
 	struct dentry *lower_dir_dentry = NULL;
 	struct dentry *lower_dentry;
-<<<<<<< HEAD
 	const char *name;
 	struct nameidata lower_nd;
 	struct qstr this;
-=======
-	const struct qstr *name;
-	struct path lower_path;
-	struct qstr dname;
-	struct dentry *ret_dentry = NULL;
->>>>>>> android-4.9
 	struct sdcardfs_sb_info *sbi;
 
 	sbi = SDCARDFS_SB(dentry->d_sb);
@@ -326,16 +231,11 @@ static struct dentry *__sdcardfs_lookup(struct dentry *dentry,
 	if (IS_ROOT(dentry))
 		goto out;
 
-<<<<<<< HEAD
 	name = dentry->d_name.name;
-=======
-	name = &dentry->d_name;
->>>>>>> android-4.9
 
 	/* now start the actual lookup procedure */
 	lower_dir_dentry = lower_parent_path->dentry;
 	lower_dir_mnt = lower_parent_path->mnt;
-<<<<<<< HEAD
 	/* Use vfs_path_lookup to check if the dentry exists or not */
 	err = vfs_path_lookup(lower_dir_dentry, lower_dir_mnt, name, 0,
 				&lower_nd.path);
@@ -360,54 +260,12 @@ static struct dentry *__sdcardfs_lookup(struct dentry *dentry,
 						&lower_nd.path);
 			dput(match);
 		}
-=======
-
-	/* Use vfs_path_lookup to check if the dentry exists or not */
-	err = vfs_path_lookup(lower_dir_dentry, lower_dir_mnt, name->name, 0,
-				&lower_path);
-	/* check for other cases */
-	if (err == -ENOENT) {
-		struct file *file;
-		const struct cred *cred = current_cred();
-
-		struct sdcardfs_name_data buffer = {
-			.ctx.actor = sdcardfs_name_match,
-			.to_find = name,
-			.name = __getname(),
-			.found = false,
-		};
-
-		if (!buffer.name) {
-			err = -ENOMEM;
-			goto out;
-		}
-		file = dentry_open(lower_parent_path, O_RDONLY, cred);
-		if (IS_ERR(file)) {
-			err = PTR_ERR(file);
-			goto put_name;
-		}
-		err = iterate_dir(file, &buffer.ctx);
-		fput(file);
-		if (err)
-			goto put_name;
-
-		if (buffer.found)
-			err = vfs_path_lookup(lower_dir_dentry,
-						lower_dir_mnt,
-						buffer.name, 0,
-						&lower_path);
-		else
-			err = -ENOENT;
-put_name:
-		__putname(buffer.name);
->>>>>>> android-4.9
 	}
 
 	/* no error: handle positive dentries */
 	if (!err) {
 		/* check if the dentry is an obb dentry
 		 * if true, the lower_inode must be replaced with
-<<<<<<< HEAD
 		 * the inode of the graft path */
 
 		if(need_graft_path(dentry)) {
@@ -420,54 +278,21 @@ put_name:
 			err = setup_obb_dentry(dentry, &lower_nd.path);
 
 			if(err) {
-=======
-		 * the inode of the graft path
-		 */
-
-		if (need_graft_path(dentry)) {
-
-			/* setup_obb_dentry()
-			 * The lower_path will be stored to the dentry's orig_path
-			 * and the base obbpath will be copyed to the lower_path variable.
-			 * if an error returned, there's no change in the lower_path
-			 * returns: -ERRNO if error (0: no error)
-			 */
-			err = setup_obb_dentry(dentry, &lower_path);
-
-			if (err) {
->>>>>>> android-4.9
 				/* if the sbi->obbpath is not available, we can optionally
 				 * setup the lower_path with its orig_path.
 				 * but, the current implementation just returns an error
 				 * because the sdcard daemon also regards this case as
-<<<<<<< HEAD
 				 * a lookup fail. */
 				printk(KERN_INFO "sdcardfs: base obbpath is not available\n");
-=======
-				 * a lookup fail.
-				 */
-				pr_info("sdcardfs: base obbpath is not available\n");
->>>>>>> android-4.9
 				sdcardfs_put_reset_orig_path(dentry);
 				goto out;
 			}
 		}
 
-<<<<<<< HEAD
 		sdcardfs_set_lower_path(dentry, &lower_nd.path);
 		err = sdcardfs_interpose(dentry, dentry->d_sb, &lower_nd.path, id);
 		if (err) /* path_put underlying path on error */
 			sdcardfs_put_reset_lower_path(dentry);
-=======
-		sdcardfs_set_lower_path(dentry, &lower_path);
-		ret_dentry =
-			__sdcardfs_interpose(dentry, dentry->d_sb, &lower_path, id);
-		if (IS_ERR(ret_dentry)) {
-			err = PTR_ERR(ret_dentry);
-			 /* path_put underlying path on error */
-			sdcardfs_put_reset_lower_path(dentry);
-		}
->>>>>>> android-4.9
 		goto out;
 	}
 
@@ -479,7 +304,6 @@ put_name:
 		goto out;
 
 	/* instatiate a new negative dentry */
-<<<<<<< HEAD
 	this.name = name;
 	this.len = strlen(name);
 	this.hash = full_name_hash(this.name, this.len);
@@ -488,16 +312,6 @@ put_name:
 		goto setup_lower;
 
 	lower_dentry = d_alloc(lower_dir_dentry, &this);
-=======
-	dname.name = name->name;
-	dname.len = name->len;
-	dname.hash = full_name_hash(lower_dir_dentry, dname.name, dname.len);
-	lower_dentry = d_lookup(lower_dir_dentry, &dname);
-	if (lower_dentry)
-		goto setup_lower;
-
-	lower_dentry = d_alloc(lower_dir_dentry, &dname);
->>>>>>> android-4.9
 	if (!lower_dentry) {
 		err = -ENOMEM;
 		goto out;
@@ -505,22 +319,15 @@ put_name:
 	d_add(lower_dentry, NULL); /* instantiate and hash */
 
 setup_lower:
-<<<<<<< HEAD
 	lower_nd.path.dentry = lower_dentry;
 	lower_nd.path.mnt = mntget(lower_dir_mnt);
 	sdcardfs_set_lower_path(dentry, &lower_nd.path);
-=======
-	lower_path.dentry = lower_dentry;
-	lower_path.mnt = mntget(lower_dir_mnt);
-	sdcardfs_set_lower_path(dentry, &lower_path);
->>>>>>> android-4.9
 
 	/*
 	 * If the intent is to create a file, then don't return an error, so
 	 * the VFS will continue the process of making this negative dentry
 	 * into a positive one.
 	 */
-<<<<<<< HEAD
 	if (nd) {
 		if (nd->flags & (LOOKUP_CREATE|LOOKUP_RENAME_TARGET))
 			err = 0;
@@ -529,42 +336,21 @@ setup_lower:
 
 out:
 	return ERR_PTR(err);
-=======
-	if (flags & (LOOKUP_CREATE|LOOKUP_RENAME_TARGET))
-		err = 0;
-
-out:
-	if (err)
-		return ERR_PTR(err);
-	return ret_dentry;
->>>>>>> android-4.9
 }
 
 /*
  * On success:
-<<<<<<< HEAD
  * 	fills dentry object appropriate values and returns NULL.
  * On fail (== error)
  * 	returns error ptr
  *
  * @dir : Parent inode. It is locked (dir->i_mutex)
-=======
- * fills dentry object appropriate values and returns NULL.
- * On fail (== error)
- * returns error ptr
- *
- * @dir : Parent inode.
->>>>>>> android-4.9
  * @dentry : Target dentry to lookup. we should set each of fields.
  *	     (dentry->d_name is initialized already)
  * @nd : nameidata of parent inode
  */
 struct dentry *sdcardfs_lookup(struct inode *dir, struct dentry *dentry,
-<<<<<<< HEAD
 			     struct nameidata *nd)
-=======
-			     unsigned int flags)
->>>>>>> android-4.9
 {
 	struct dentry *ret = NULL, *parent;
 	struct path lower_parent_path;
@@ -573,7 +359,6 @@ struct dentry *sdcardfs_lookup(struct inode *dir, struct dentry *dentry,
 
 	parent = dget_parent(dentry);
 
-<<<<<<< HEAD
 	if(!check_caller_access_to_name(parent->d_inode, dentry->d_name.name)) {
 		ret = ERR_PTR(-EACCES);
 		printk(KERN_INFO "%s: need to check the caller's gid in packages.list\n"
@@ -584,15 +369,6 @@ struct dentry *sdcardfs_lookup(struct inode *dir, struct dentry *dentry,
 
 	/* save current_cred and override it */
 	OVERRIDE_CRED_PTR(SDCARDFS_SB(dir->i_sb), saved_cred);
-=======
-	if (!check_caller_access_to_name(d_inode(parent), &dentry->d_name)) {
-		ret = ERR_PTR(-EACCES);
-		goto out_err;
-	}
-
-	/* save current_cred and override it */
-	OVERRIDE_CRED_PTR(SDCARDFS_SB(dir->i_sb), saved_cred, SDCARDFS_I(dir));
->>>>>>> android-4.9
 
 	sdcardfs_get_lower_path(parent, &lower_parent_path);
 
@@ -603,7 +379,6 @@ struct dentry *sdcardfs_lookup(struct inode *dir, struct dentry *dentry,
 		goto out;
 	}
 
-<<<<<<< HEAD
 	ret = __sdcardfs_lookup(dentry, nd, &lower_parent_path, SDCARDFS_I(dir)->userid);
 	if (IS_ERR(ret))
 	{
@@ -621,24 +396,6 @@ struct dentry *sdcardfs_lookup(struct inode *dir, struct dentry *dentry,
 	/* update parent directory's atime */
 	fsstack_copy_attr_atime(parent->d_inode,
 				sdcardfs_lower_inode(parent->d_inode));
-=======
-	ret = __sdcardfs_lookup(dentry, flags, &lower_parent_path, SDCARDFS_I(dir)->userid);
-	if (IS_ERR(ret))
-		goto out;
-	if (ret)
-		dentry = ret;
-	if (d_inode(dentry)) {
-		fsstack_copy_attr_times(d_inode(dentry),
-					sdcardfs_lower_inode(d_inode(dentry)));
-		/* get derived permission */
-		get_derived_permission(parent, dentry);
-		fixup_tmp_permissions(d_inode(dentry));
-		fixup_lower_ownership(dentry, dentry->d_name.name);
-	}
-	/* update parent directory's atime */
-	fsstack_copy_attr_atime(d_inode(parent),
-				sdcardfs_lower_inode(d_inode(parent)));
->>>>>>> android-4.9
 
 out:
 	sdcardfs_put_lower_path(parent, &lower_parent_path);

@@ -9,7 +9,6 @@
 #ifndef __LINUX_USB_OTG_H
 #define __LINUX_USB_OTG_H
 
-<<<<<<< HEAD
 #include <linux/notifier.h>
 
 /* OTG defines lots of enumeration states before device reset */
@@ -81,21 +80,13 @@ struct usb_phy_io_ops {
 	int (*read)(struct usb_phy *x, u32 reg);
 	int (*write)(struct usb_phy *x, u32 val, u32 reg);
 };
-=======
-#include <linux/phy/phy.h>
-#include <linux/usb/phy.h>
->>>>>>> android-4.9
 
 struct usb_otg {
 	u8			default_a;
 
-	struct phy		*phy;
-	/* old usb_phy interface */
-	struct usb_phy		*usb_phy;
+	struct usb_phy		*phy;
 	struct usb_bus		*host;
 	struct usb_gadget	*gadget;
-
-	enum usb_otg_state	state;
 
 	/* bind/unbind the host controller */
 	int	(*set_host)(struct usb_otg *otg, struct usb_bus *host);
@@ -119,22 +110,47 @@ struct usb_otg {
 
 };
 
-/**
- * struct usb_otg_caps - describes the otg capabilities of the device
- * @otg_rev: The OTG revision number the device is compliant with, it's
- *		in binary-coded decimal (i.e. 2.0 is 0200H).
- * @hnp_support: Indicates if the device supports HNP.
- * @srp_support: Indicates if the device supports SRP.
- * @adp_support: Indicates if the device supports ADP.
+/*
+ * the otg driver needs to interact with both device side and host side
+ * usb controllers.  it decides which controller is active at a given
+ * moment, using the transceiver, ID signal, HNP and sometimes static
+ * configuration information (including "board isn't wired for otg").
  */
-struct usb_otg_caps {
-	u16 otg_rev;
-	bool hnp_support;
-	bool srp_support;
-	bool adp_support;
+struct usb_phy {
+	struct device		*dev;
+	const char		*label;
+	unsigned int		 flags;
+
+	enum usb_otg_state	state;
+	enum usb_phy_events	last_event;
+
+	struct usb_otg		*otg;
+
+	struct device		*io_dev;
+	struct usb_phy_io_ops	*io_ops;
+	void __iomem		*io_priv;
+
+	/* for notification of usb_phy_events */
+	struct atomic_notifier_head	notifier;
+
+	/* to pass extra port status to the root hub */
+	u16			port_status;
+	u16			port_change;
+
+	/* initialize/shutdown the OTG controller */
+	int	(*init)(struct usb_phy *x);
+	void	(*shutdown)(struct usb_phy *x);
+
+	/* effective for B devices, ignored for A-peripheral */
+	int	(*set_power)(struct usb_phy *x,
+				unsigned mA);
+
+	/* for non-OTG B devices: set transceiver into suspend mode */
+	int	(*set_suspend)(struct usb_phy *x,
+				int suspend);
+
 };
 
-<<<<<<< HEAD
 
 /* for board-specific init logic */
 extern int usb_set_transceiver(struct usb_phy *);
@@ -210,9 +226,6 @@ static inline const char *otg_state_string(enum usb_otg_state state)
 	return NULL;
 }
 #endif
-=======
-extern const char *usb_otg_state_string(enum usb_otg_state state);
->>>>>>> android-4.9
 
 /* Context: can sleep */
 static inline int
@@ -257,6 +270,24 @@ otg_set_peripheral(struct usb_otg *otg, struct usb_gadget *periph)
 }
 
 static inline int
+usb_phy_set_power(struct usb_phy *x, unsigned mA)
+{
+	if (x && x->set_power)
+		return x->set_power(x, mA);
+	return 0;
+}
+
+/* Context: can sleep */
+static inline int
+usb_phy_set_suspend(struct usb_phy *x, int suspend)
+{
+	if (x->set_suspend != NULL)
+		return x->set_suspend(x, suspend);
+	else
+		return 0;
+}
+
+static inline int
 otg_start_srp(struct usb_otg *otg)
 {
 	if (otg && otg->start_srp)
@@ -265,23 +296,20 @@ otg_start_srp(struct usb_otg *otg)
 	return -ENOTSUPP;
 }
 
+/* notifiers */
+static inline int
+usb_register_notifier(struct usb_phy *x, struct notifier_block *nb)
+{
+	return atomic_notifier_chain_register(&x->notifier, nb);
+}
+
+static inline void
+usb_unregister_notifier(struct usb_phy *x, struct notifier_block *nb)
+{
+	atomic_notifier_chain_unregister(&x->notifier, nb);
+}
+
 /* for OTG controller drivers (and maybe other stuff) */
 extern int usb_bus_start_enum(struct usb_bus *bus, unsigned port_num);
-
-enum usb_dr_mode {
-	USB_DR_MODE_UNKNOWN,
-	USB_DR_MODE_HOST,
-	USB_DR_MODE_PERIPHERAL,
-	USB_DR_MODE_OTG,
-};
-
-/**
- * usb_get_dr_mode - Get dual role mode for given device
- * @dev: Pointer to the given device
- *
- * The function gets phy interface string from property 'dr_mode',
- * and returns the correspondig enum usb_dr_mode
- */
-extern enum usb_dr_mode usb_get_dr_mode(struct device *dev);
 
 #endif /* __LINUX_USB_OTG_H */

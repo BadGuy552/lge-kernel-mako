@@ -17,10 +17,6 @@ struct dev_archdata {
 #ifdef CONFIG_ARM_DMA_USE_IOMMU
 	struct dma_iommu_mapping	*mapping;
 #endif
-<<<<<<< HEAD
-=======
-	bool dma_coherent;
->>>>>>> android-4.9
 };
 
 struct omap_device;
@@ -30,11 +26,5 @@ struct pdev_archdata {
 	struct omap_device *od;
 #endif
 };
-
-#ifdef CONFIG_ARM_DMA_USE_IOMMU
-#define to_dma_iommu_mapping(dev) ((dev)->archdata.mapping)
-#else
-#define to_dma_iommu_mapping(dev) NULL
-#endif
 
 #endif

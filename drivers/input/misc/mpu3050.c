@@ -30,6 +30,7 @@
  */
 
 #include <linux/module.h>
+#include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 #include <linux/mutex.h>
@@ -546,7 +547,7 @@ static void mpu3050_input_work_fn(struct work_struct *work)
  *
  *	Called during device probe; configures the sampling method.
  */
-static int mpu3050_hw_init(struct mpu3050_sensor *sensor)
+static int __devinit mpu3050_hw_init(struct mpu3050_sensor *sensor)
 {
 	struct i2c_client *client = sensor->client;
 	int ret;
@@ -595,7 +596,7 @@ static int mpu3050_hw_init(struct mpu3050_sensor *sensor)
  *
  *	If present install the relevant sysfs interfaces and input device.
  */
-static int mpu3050_probe(struct i2c_client *client,
+static int __devinit mpu3050_probe(struct i2c_client *client,
 				   const struct i2c_device_id *id)
 {
 	struct mpu3050_sensor *sensor;
@@ -693,11 +694,7 @@ static int mpu3050_probe(struct i2c_client *client,
 
 		error = request_threaded_irq(client->irq,
 				     NULL, mpu3050_interrupt_thread,
-<<<<<<< HEAD
 				     IRQF_TRIGGER_FALLING,
-=======
-				     IRQF_TRIGGER_RISING | IRQF_ONESHOT,
->>>>>>> android-4.9
 				     "mpu3050", sensor);
 		if (error) {
 			dev_err(&client->dev,
@@ -721,7 +718,6 @@ static int mpu3050_probe(struct i2c_client *client,
 
 	pm_runtime_enable(&client->dev);
 	pm_runtime_set_autosuspend_delay(&client->dev, MPU3050_AUTO_DELAY);
-	i2c_set_clientdata(client, sensor);
 
 	return 0;
 
@@ -748,7 +744,7 @@ err_free_mem:
  *
  *	Our sensor is going away, clean up the resources.
  */
-static int mpu3050_remove(struct i2c_client *client)
+static int __devexit mpu3050_remove(struct i2c_client *client)
 {
 	struct mpu3050_sensor *sensor = i2c_get_clientdata(client);
 
@@ -820,11 +816,12 @@ MODULE_DEVICE_TABLE(of, mpu3050_of_match);
 static struct i2c_driver mpu3050_i2c_driver = {
 	.driver	= {
 		.name	= "mpu3050",
+		.owner	= THIS_MODULE,
 		.pm	= &mpu3050_pm,
 		.of_match_table = mpu3050_of_match,
 	},
 	.probe		= mpu3050_probe,
-	.remove		= mpu3050_remove,
+	.remove		= __devexit_p(mpu3050_remove),
 	.id_table	= mpu3050_ids,
 };
 

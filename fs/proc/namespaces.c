@@ -1,13 +1,16 @@
 #include <linux/proc_fs.h>
 #include <linux/nsproxy.h>
+#include <linux/sched.h>
 #include <linux/ptrace.h>
+#include <linux/fs_struct.h>
+#include <linux/mount.h>
+#include <linux/path.h>
 #include <linux/namei.h>
 #include <linux/file.h>
 #include <linux/utsname.h>
 #include <net/net_namespace.h>
 #include <linux/ipc_namespace.h>
 #include <linux/pid_namespace.h>
-#include <linux/user_namespace.h>
 #include "internal.h"
 
 
@@ -24,72 +27,13 @@ static const struct proc_ns_operations *ns_entries[] = {
 #ifdef CONFIG_PID_NS
 	&pidns_operations,
 #endif
-<<<<<<< HEAD
 	&mntns_operations,
-=======
-#ifdef CONFIG_USER_NS
-	&userns_operations,
-#endif
-	&mntns_operations,
-#ifdef CONFIG_CGROUPS
-	&cgroupns_operations,
-#endif
->>>>>>> android-4.9
 };
 
-static const char *proc_ns_get_link(struct dentry *dentry,
-				    struct inode *inode,
-				    struct delayed_call *done)
-{
-	const struct proc_ns_operations *ns_ops = PROC_I(inode)->ns_ops;
-	struct task_struct *task;
-	struct path ns_path;
-	void *error = ERR_PTR(-EACCES);
-
-	if (!dentry)
-		return ERR_PTR(-ECHILD);
-
-	task = get_proc_task(inode);
-	if (!task)
-		return error;
-
-	if (ptrace_may_access(task, PTRACE_MODE_READ_FSCREDS)) {
-		error = ns_get_path(&ns_path, task, ns_ops);
-		if (!error)
-			nd_jump_link(&ns_path);
-	}
-	put_task_struct(task);
-	return error;
-}
-
-static int proc_ns_readlink(struct dentry *dentry, char __user *buffer, int buflen)
-{
-	struct inode *inode = d_inode(dentry);
-	const struct proc_ns_operations *ns_ops = PROC_I(inode)->ns_ops;
-	struct task_struct *task;
-	char name[50];
-	int res = -EACCES;
-
-	task = get_proc_task(inode);
-	if (!task)
-		return res;
-
-	if (ptrace_may_access(task, PTRACE_MODE_READ_FSCREDS)) {
-		res = ns_get_name(name, sizeof(name), task, ns_ops);
-		if (res >= 0)
-			res = readlink_copy(buffer, buflen, name);
-	}
-	put_task_struct(task);
-	return res;
-}
-
-static const struct inode_operations proc_ns_link_inode_operations = {
-	.readlink	= proc_ns_readlink,
-	.get_link	= proc_ns_get_link,
-	.setattr	= proc_setattr,
+static const struct file_operations ns_file_operations = {
+	.llseek		= no_llseek,
 };
 
-<<<<<<< HEAD
 static const struct inode_operations ns_inode_operations = {
 	.setattr	= proc_setattr,
 };
@@ -240,18 +184,12 @@ static const struct inode_operations proc_ns_link_inode_operations = {
 };
 
 static struct dentry *proc_ns_instantiate(struct inode *dir,
-=======
-static int proc_ns_instantiate(struct inode *dir,
->>>>>>> android-4.9
 	struct dentry *dentry, struct task_struct *task, const void *ptr)
 {
 	const struct proc_ns_operations *ns_ops = ptr;
 	struct inode *inode;
 	struct proc_inode *ei;
-<<<<<<< HEAD
 	struct dentry *error = ERR_PTR(-ENOENT);
-=======
->>>>>>> android-4.9
 
 	inode = proc_pid_make_inode(dir->i_sb, task);
 	if (!inode)
@@ -265,10 +203,9 @@ static int proc_ns_instantiate(struct inode *dir,
 	d_set_d_op(dentry, &pid_dentry_operations);
 	d_add(dentry, inode);
 	/* Close the race of the process dying before we return the dentry */
-	if (pid_revalidate(dentry, 0))
-		return 0;
+	if (pid_revalidate(dentry, NULL))
+		error = NULL;
 out:
-<<<<<<< HEAD
 	return error;
 }
 
@@ -279,20 +216,23 @@ static int proc_ns_fill_cache(struct file *filp, void *dirent,
 	return proc_fill_cache(filp, dirent, filldir,
 				ops->name, strlen(ops->name),
 				proc_ns_instantiate, task, ops);
-=======
-	return -ENOENT;
->>>>>>> android-4.9
 }
 
-static int proc_ns_dir_readdir(struct file *file, struct dir_context *ctx)
+static int proc_ns_dir_readdir(struct file *filp, void *dirent,
+				filldir_t filldir)
 {
-	struct task_struct *task = get_proc_task(file_inode(file));
+	int i;
+	struct dentry *dentry = filp->f_path.dentry;
+	struct inode *inode = dentry->d_inode;
+	struct task_struct *task = get_proc_task(inode);
 	const struct proc_ns_operations **entry, **last;
+	ino_t ino;
+	int ret;
 
+	ret = -ENOENT;
 	if (!task)
-		return -ENOENT;
+		goto out_no_task;
 
-<<<<<<< HEAD
 	ret = 0;
 	i = filp->f_pos;
 	switch (i) {
@@ -325,42 +265,29 @@ static int proc_ns_dir_readdir(struct file *file, struct dir_context *ctx)
 			filp->f_pos++;
 			entry++;
 		}
-=======
-	if (!dir_emit_dots(file, ctx))
-		goto out;
-	if (ctx->pos >= 2 + ARRAY_SIZE(ns_entries))
-		goto out;
-	entry = ns_entries + (ctx->pos - 2);
-	last = &ns_entries[ARRAY_SIZE(ns_entries) - 1];
-	while (entry <= last) {
-		const struct proc_ns_operations *ops = *entry;
-		if (!proc_fill_cache(file, ctx, ops->name, strlen(ops->name),
-				     proc_ns_instantiate, task, ops))
-			break;
-		ctx->pos++;
-		entry++;
->>>>>>> android-4.9
 	}
+
+	ret = 1;
 out:
 	put_task_struct(task);
-	return 0;
+out_no_task:
+	return ret;
 }
 
 const struct file_operations proc_ns_dir_operations = {
 	.read		= generic_read_dir,
-	.iterate_shared	= proc_ns_dir_readdir,
-	.llseek		= generic_file_llseek,
+	.readdir	= proc_ns_dir_readdir,
 };
 
 static struct dentry *proc_ns_dir_lookup(struct inode *dir,
-				struct dentry *dentry, unsigned int flags)
+				struct dentry *dentry, struct nameidata *nd)
 {
-	int error;
+	struct dentry *error;
 	struct task_struct *task = get_proc_task(dir);
 	const struct proc_ns_operations **entry, **last;
 	unsigned int len = dentry->d_name.len;
 
-	error = -ENOENT;
+	error = ERR_PTR(-ENOENT);
 
 	if (!task)
 		goto out_no_task;
@@ -379,7 +306,7 @@ static struct dentry *proc_ns_dir_lookup(struct inode *dir,
 out:
 	put_task_struct(task);
 out_no_task:
-	return ERR_PTR(error);
+	return error;
 }
 
 const struct inode_operations proc_ns_dir_inode_operations = {
@@ -387,7 +314,6 @@ const struct inode_operations proc_ns_dir_inode_operations = {
 	.getattr	= pid_getattr,
 	.setattr	= proc_setattr,
 };
-<<<<<<< HEAD
 
 struct file *proc_ns_fget(int fd)
 {
@@ -411,5 +337,3 @@ bool proc_ns_inode(struct inode *inode)
 {
 	return inode->i_fop == &ns_file_operations;
 }
-=======
->>>>>>> android-4.9

@@ -8,6 +8,10 @@ menu "Graphics support"
 config HAVE_FB_ATMEL
 	bool
 
+config SH_MIPI_DSI
+	tristate
+	depends on (SUPERH || ARCH_SHMOBILE) && HAVE_CLK
+
 config SH_LCD_MIPI_DSI
 	bool
 
@@ -15,7 +19,6 @@ source "drivers/char/agp/Kconfig"
 
 source "drivers/gpu/vga/Kconfig"
 
-<<<<<<< HEAD
 source "drivers/gpu/drm/Kconfig"
 
 source "drivers/gpu/stub/Kconfig"
@@ -174,29 +177,542 @@ menuconfig FB_FOREIGN_ENDIAN
 choice
 	prompt "Choice endianness support"
 	depends on FB_FOREIGN_ENDIAN
-=======
-source "drivers/gpu/host1x/Kconfig"
-source "drivers/gpu/ipu-v3/Kconfig"
->>>>>>> android-4.9
 
-source "drivers/gpu/drm/Kconfig"
+config FB_BOTH_ENDIAN
+	bool "Support for Big- and Little-Endian framebuffers"
 
-menu "Frame buffer Devices"
-source "drivers/video/fbdev/Kconfig"
-endmenu
+config FB_BIG_ENDIAN
+	bool "Support for Big-Endian framebuffers only"
 
-source "drivers/video/backlight/Kconfig"
+config FB_LITTLE_ENDIAN
+	bool "Support for Little-Endian framebuffers only"
 
-config VGASTATE
+endchoice
+
+config FB_SYS_FOPS
        tristate
+       depends on FB
        default n
 
-config VIDEOMODE_HELPERS
-	bool
+config FB_WMT_GE_ROPS
+	tristate
+	depends on FB
+	default n
+	---help---
+	  Include functions for accelerated rectangle filling and area
+	  copying using WonderMedia Graphics Engine operations.
 
-config HDMI
+config FB_DEFERRED_IO
 	bool
-<<<<<<< HEAD
+	depends on FB
+
+config FB_HECUBA
+	tristate
+	depends on FB
+	depends on FB_DEFERRED_IO
+
+config FB_SVGALIB
+	tristate
+	depends on FB
+	default n
+	---help---
+	  Common utility functions useful to fbdev drivers of VGA-based
+	  cards.
+
+config FB_MACMODES
+       tristate
+       depends on FB
+       default n
+
+config FB_BACKLIGHT
+	bool
+	depends on FB
+	select BACKLIGHT_LCD_SUPPORT
+	select BACKLIGHT_CLASS_DEVICE
+	default n
+
+config FB_MODE_HELPERS
+        bool "Enable Video Mode Handling Helpers"
+        depends on FB
+	default n
+	---help---
+	  This enables functions for handling video modes using the
+	  Generalized Timing Formula and the EDID parser. A few drivers rely
+          on this feature such as the radeonfb, rivafb, and the i810fb. If
+	  your driver does not take advantage of this feature, choosing Y will
+	  just increase the kernel size by about 5K.
+
+config FB_TILEBLITTING
+       bool "Enable Tile Blitting Support"
+       depends on FB
+       default n
+       ---help---
+         This enables tile blitting.  Tile blitting is a drawing technique
+	 where the screen is divided into rectangular sections (tiles), whereas
+	 the standard blitting divides the screen into pixels. Because the
+	 default drawing element is a tile, drawing functions will be passed
+	 parameters in terms of number of tiles instead of number of pixels.
+	 For example, to draw a single character, instead of using bitmaps,
+	 an index to an array of bitmaps will be used.  To clear or move a
+	 rectangular section of a screen, the rectangle will be described in
+	 terms of number of tiles in the x- and y-axis.
+
+	 This is particularly important to one driver, matroxfb.  If
+	 unsure, say N.
+
+comment "Frame buffer hardware drivers"
+	depends on FB
+
+config FB_GRVGA
+	tristate "Aeroflex Gaisler framebuffer support"
+	depends on FB && SPARC
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	---help---
+	This enables support for the SVGACTRL framebuffer in the GRLIB IP library from Aeroflex Gaisler.
+
+config FB_CIRRUS
+	tristate "Cirrus Logic support"
+	depends on FB && (ZORRO || PCI)
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	---help---
+	  This enables support for Cirrus Logic GD542x/543x based boards on
+	  Amiga: SD64, Piccolo, Picasso II/II+, Picasso IV, or EGS Spectrum.
+
+	  If you have a PCI-based system, this enables support for these
+	  chips: GD-543x, GD-544x, GD-5480.
+
+	  Please read the file <file:Documentation/fb/cirrusfb.txt>.
+
+	  Say N unless you have such a graphics board or plan to get one
+	  before you next recompile the kernel.
+
+config FB_PM2
+	tristate "Permedia2 support"
+	depends on FB && ((AMIGA && BROKEN) || PCI)
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	help
+	  This is the frame buffer device driver for cards based on
+	  the 3D Labs Permedia, Permedia 2 and Permedia 2V chips.
+	  The driver was tested on the following cards:
+		Diamond FireGL 1000 PRO AGP
+		ELSA Gloria Synergy PCI
+		Appian Jeronimo PRO (both heads) PCI
+		3DLabs Oxygen ACX aka EONtronics Picasso P2 PCI
+		Techsource Raptor GFX-8P (aka Sun PGX-32) on SPARC
+		ASK Graphic Blaster Exxtreme AGP
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called pm2fb.
+
+config FB_PM2_FIFO_DISCONNECT
+	bool "enable FIFO disconnect feature"
+	depends on FB_PM2 && PCI
+	help
+	  Support the Permedia2 FIFO disconnect feature.
+
+config FB_ARMCLCD
+	tristate "ARM PrimeCell PL110 support"
+	depends on FB && ARM && ARM_AMBA
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	help
+	  This framebuffer device driver is for the ARM PrimeCell PL110
+	  Colour LCD controller.  ARM PrimeCells provide the building
+	  blocks for System on a Chip devices.
+
+	  If you want to compile this as a module (=code which can be
+	  inserted into and removed from the running kernel), say M
+	  here and read <file:Documentation/kbuild/modules.txt>.  The module
+	  will be called amba-clcd.
+
+config FB_ACORN
+	bool "Acorn VIDC support"
+	depends on (FB = y) && ARM && ARCH_ACORN
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	help
+	  This is the frame buffer device driver for the Acorn VIDC graphics
+	  hardware found in Acorn RISC PCs and other ARM-based machines.  If
+	  unsure, say N.
+
+config FB_CLPS711X
+	bool "CLPS711X LCD support"
+	depends on (FB = y) && ARM && ARCH_CLPS711X
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	help
+	  Say Y to enable the Framebuffer driver for the CLPS7111 and
+	  EP7212 processors.
+
+config FB_SA1100
+	bool "SA-1100 LCD support"
+	depends on (FB = y) && ARM && ARCH_SA1100
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	help
+	  This is a framebuffer device for the SA-1100 LCD Controller.
+	  See <http://www.linux-fbdev.org/> for information on framebuffer
+	  devices.
+
+	  If you plan to use the LCD display with your SA-1100 system, say
+	  Y here.
+
+config FB_IMX
+	tristate "Freescale i.MX LCD support"
+	depends on FB && IMX_HAVE_PLATFORM_IMX_FB
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+
+config FB_CYBER2000
+	tristate "CyberPro 2000/2010/5000 support"
+	depends on FB && PCI && (BROKEN || !SPARC64)
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	help
+	  This enables support for the Integraphics CyberPro 20x0 and 5000
+	  VGA chips used in the Rebel.com Netwinder and other machines.
+	  Say Y if you have a NetWinder or a graphics card containing this
+	  device, otherwise say N.
+
+config FB_CYBER2000_DDC
+	bool "DDC for CyberPro support"
+	depends on FB_CYBER2000
+	select FB_DDC
+	default y
+	help
+	  Say Y here if you want DDC support for your CyberPro graphics
+	  card. This is only I2C bus support, driver does not use EDID.
+
+config FB_CYBER2000_I2C
+	bool "CyberPro 2000/2010/5000 I2C support"
+	depends on FB_CYBER2000 && I2C && ARCH_NETWINDER
+	select I2C_ALGOBIT
+	help
+	  Enable support for the I2C video decoder interface on the
+	  Integraphics CyberPro 20x0 and 5000 VGA chips.  This is used
+	  on the Netwinder machines for the SAA7111 video capture.
+
+config FB_APOLLO
+	bool
+	depends on (FB = y) && APOLLO
+	default y
+	select FB_CFB_FILLRECT
+	select FB_CFB_IMAGEBLIT
+
+config FB_Q40
+	bool
+	depends on (FB = y) && Q40
+	default y
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+
+config FB_AMIGA
+	tristate "Amiga native chipset support"
+	depends on FB && AMIGA
+	help
+	  This is the frame buffer device driver for the builtin graphics
+	  chipset found in Amigas.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called amifb.
+
+config FB_AMIGA_OCS
+	bool "Amiga OCS chipset support"
+	depends on FB_AMIGA
+	help
+	  This enables support for the original Agnus and Denise video chips,
+	  found in the Amiga 1000 and most A500's and A2000's. If you intend
+	  to run Linux on any of these systems, say Y; otherwise say N.
+
+config FB_AMIGA_ECS
+	bool "Amiga ECS chipset support"
+	depends on FB_AMIGA
+	help
+	  This enables support for the Enhanced Chip Set, found in later
+	  A500's, later A2000's, the A600, the A3000, the A3000T and CDTV. If
+	  you intend to run Linux on any of these systems, say Y; otherwise
+	  say N.
+
+config FB_AMIGA_AGA
+	bool "Amiga AGA chipset support"
+	depends on FB_AMIGA
+	help
+	  This enables support for the Advanced Graphics Architecture (also
+	  known as the AGA or AA) Chip Set, found in the A1200, A4000, A4000T
+	  and CD32. If you intend to run Linux on any of these systems, say Y;
+	  otherwise say N.
+
+config FB_FM2
+	bool "Amiga FrameMaster II/Rainbow II support"
+	depends on (FB = y) && ZORRO
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	help
+	  This is the frame buffer device driver for the Amiga FrameMaster
+	  card from BSC (exhibited 1992 but not shipped as a CBM product).
+
+config FB_ARC
+	tristate "Arc Monochrome LCD board support"
+	depends on FB && X86
+	select FB_SYS_FILLRECT
+	select FB_SYS_COPYAREA
+	select FB_SYS_IMAGEBLIT
+	select FB_SYS_FOPS
+	help
+	  This enables support for the Arc Monochrome LCD board. The board
+	  is based on the KS-108 lcd controller and is typically a matrix
+	  of 2*n chips. This driver was tested with a 128x64 panel. This
+	  driver supports it for use with x86 SBCs through a 16 bit GPIO
+	  interface (8 bit data, 8 bit control). If you anticipate using
+	  this driver, say Y or M; otherwise say N. You must specify the
+	  GPIO IO address to be used for setting control and data.
+
+config FB_ATARI
+	bool "Atari native chipset support"
+	depends on (FB = y) && ATARI
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	help
+	  This is the frame buffer device driver for the builtin graphics
+	  chipset found in Ataris.
+
+config FB_OF
+	bool "Open Firmware frame buffer device support"
+	depends on (FB = y) && (PPC64 || PPC_OF) && (!PPC_PSERIES || PCI)
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	select FB_MACMODES
+	help
+	  Say Y if you want support with Open Firmware for your graphics
+	  board.
+
+config FB_CONTROL
+	bool "Apple \"control\" display support"
+	depends on (FB = y) && PPC_PMAC && PPC32
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	select FB_MACMODES
+	help
+	  This driver supports a frame buffer for the graphics adapter in the
+	  Power Macintosh 7300 and others.
+
+config FB_PLATINUM
+	bool "Apple \"platinum\" display support"
+	depends on (FB = y) && PPC_PMAC && PPC32
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	select FB_MACMODES
+	help
+	  This driver supports a frame buffer for the "platinum" graphics
+	  adapter in some Power Macintoshes.
+
+config FB_VALKYRIE
+	bool "Apple \"valkyrie\" display support"
+	depends on (FB = y) && (MAC || (PPC_PMAC && PPC32))
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	select FB_MACMODES
+	help
+	  This driver supports a frame buffer for the "valkyrie" graphics
+	  adapter in some Power Macintoshes.
+
+config FB_CT65550
+	bool "Chips 65550 display support"
+	depends on (FB = y) && PPC32 && PCI
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	help
+	  This is the frame buffer device driver for the Chips & Technologies
+	  65550 graphics chip in PowerBooks.
+
+config FB_ASILIANT
+	bool "Asiliant (Chips) 69000 display support"
+	depends on (FB = y) && PCI
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	help
+	  This is the frame buffer device driver for the Asiliant 69030 chipset
+
+config FB_IMSTT
+	bool "IMS Twin Turbo display support"
+	depends on (FB = y) && PCI
+	select FB_CFB_IMAGEBLIT
+	select FB_MACMODES if PPC
+	help
+	  The IMS Twin Turbo is a PCI-based frame buffer card bundled with
+	  many Macintosh and compatible computers.
+
+config FB_VGA16
+	tristate "VGA 16-color graphics support"
+	depends on FB && (X86 || PPC)
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	select VGASTATE
+	select FONT_8x16 if FRAMEBUFFER_CONSOLE
+	help
+	  This is the frame buffer device driver for VGA 16 color graphic
+	  cards. Say Y if you have such a card.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called vga16fb.
+
+config FB_BF54X_LQ043
+	tristate "SHARP LQ043 TFT LCD (BF548 EZKIT)"
+	depends on FB && (BF54x) && !BF542
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	help
+	 This is the framebuffer device driver for a SHARP LQ043T1DG01 TFT LCD
+
+config FB_BFIN_T350MCQB
+	tristate "Varitronix COG-T350MCQB TFT LCD display (BF527 EZKIT)"
+	depends on FB && BLACKFIN
+	select BFIN_GPTIMERS
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	help
+	 This is the framebuffer device driver for a Varitronix VL-PS-COG-T350MCQB-01 display TFT LCD
+	 This display is a QVGA 320x240 24-bit RGB display interfaced by an 8-bit wide PPI
+	 It uses PPI[0..7] PPI_FS1, PPI_FS2 and PPI_CLK.
+
+config FB_BFIN_LQ035Q1
+	tristate "SHARP LQ035Q1DH02 TFT LCD"
+	depends on FB && BLACKFIN && SPI
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	select BFIN_GPTIMERS
+	help
+	  This is the framebuffer device driver for a SHARP LQ035Q1DH02 TFT display found on
+	  the Blackfin Landscape LCD EZ-Extender Card.
+	  This display is a QVGA 320x240 18-bit RGB display interfaced by an 16-bit wide PPI
+	  It uses PPI[0..15] PPI_FS1, PPI_FS2 and PPI_CLK.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called bfin-lq035q1-fb.
+
+config FB_BF537_LQ035
+	tristate "SHARP LQ035 TFT LCD (BF537 STAMP)"
+	depends on FB && (BF534 || BF536 || BF537) && I2C_BLACKFIN_TWI
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	select BFIN_GPTIMERS
+	help
+	  This is the framebuffer device for a SHARP LQ035Q7DB03 TFT LCD
+	  attached to a BF537.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called bf537-lq035.
+
+config FB_BFIN_7393
+	tristate "Blackfin ADV7393 Video encoder"
+	depends on FB && BLACKFIN
+	select I2C
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	help
+	  This is the framebuffer device for a ADV7393 video encoder
+	  attached to a Blackfin on the PPI port.
+	  If your Blackfin board has a ADV7393 select Y.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called bfin_adv7393fb.
+
+choice
+	prompt  "Video mode support"
+	depends on FB_BFIN_7393
+	default NTSC
+
+config NTSC
+	bool 'NTSC 720x480'
+
+config PAL
+	bool 'PAL 720x576'
+
+config NTSC_640x480
+	bool 'NTSC 640x480 (Experimental)'
+
+config PAL_640x480
+	bool 'PAL 640x480 (Experimental)'
+
+config NTSC_YCBCR
+	bool 'NTSC 720x480 YCbCR input'
+
+config PAL_YCBCR
+	bool 'PAL 720x576 YCbCR input'
+
+endchoice
+
+choice
+	prompt  "Size of ADV7393 frame buffer memory Single/Double Size"
+	depends on (FB_BFIN_7393)
+	default ADV7393_1XMEM
+
+config ADV7393_1XMEM
+	bool 'Single'
+
+config ADV7393_2XMEM
+	bool 'Double'
+endchoice
+
+config FB_STI
+	tristate "HP STI frame buffer device support"
+	depends on FB && PARISC
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	select STI_CONSOLE
+	select VT
+	default y
+	---help---
+	  STI refers to the HP "Standard Text Interface" which is a set of
+	  BIOS routines contained in a ROM chip in HP PA-RISC based machines.
+	  Enabling this option will implement the linux framebuffer device
+	  using calls to the STI BIOS routines for initialisation.
+	
+	  If you enable this option, you will get a planar framebuffer device
+	  /dev/fb which will work on the most common HP graphic cards of the
+	  NGLE family, including the artist chips (in the 7xx and Bxxx series),
+	  HCRX, HCRX24, CRX, CRX24 and VisEG series.
+
+	  It is safe to enable this option, so you should probably say "Y".
+
+config FB_MAC
+	bool "Generic Macintosh display support"
+	depends on (FB = y) && MAC
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	select FB_MACMODES
+
+config FB_HP300
+	bool
 	depends on (FB = y) && DIO
 	select FB_CFB_IMAGEBLIT
 	default y
@@ -1898,8 +2414,6 @@ source "drivers/video/omap/Kconfig"
 source "drivers/video/omap2/Kconfig"
 source "drivers/video/exynos/Kconfig"
 source "drivers/video/backlight/Kconfig"
-=======
->>>>>>> android-4.9
 
 if VT
 	source "drivers/video/console/Kconfig"
@@ -1907,8 +2421,18 @@ endif
 
 if FB || SGI_NEWPORT_CONSOLE
 	source "drivers/video/logo/Kconfig"
-
 endif
 
+config FB_SH_MOBILE_MERAM
+	tristate "SuperH Mobile MERAM read ahead support"
+	depends on (SUPERH || ARCH_SHMOBILE)
+	select GENERIC_ALLOCATOR
+	---help---
+	  Enable MERAM support for the SuperH controller.
+
+	  This will allow for caching of the framebuffer to provide more
+	  reliable access under heavy main memory bus traffic situations.
+	  Up to 4 memory channels can be configured, allowing 4 RGB or
+	  2 YCbCr framebuffers to be configured.
 
 endmenu

@@ -23,7 +23,6 @@
 #ifndef _LINUX_IF_ARP_H
 #define _LINUX_IF_ARP_H
 
-<<<<<<< HEAD
 #include <linux/netdevice.h>
 
 /* ARP protocol HARDWARE identifiers. */
@@ -156,10 +155,7 @@ struct arphdr {
 };
 
 #ifdef __KERNEL__
-=======
->>>>>>> android-4.9
 #include <linux/skbuff.h>
-#include <uapi/linux/if_arp.h>
 
 static inline struct arphdr *arp_hdr(const struct sk_buff *skb)
 {
@@ -168,15 +164,9 @@ static inline struct arphdr *arp_hdr(const struct sk_buff *skb)
 
 static inline int arp_hdr_len(struct net_device *dev)
 {
-	switch (dev->type) {
-#if IS_ENABLED(CONFIG_FIREWIRE_NET)
-	case ARPHRD_IEEE1394:
-		/* ARP header, device address and 2 IP addresses */
-		return sizeof(struct arphdr) + dev->addr_len + sizeof(u32) * 2;
-#endif
-	default:
-		/* ARP header, plus 2 device addresses, plus 2 IP addresses. */
-		return sizeof(struct arphdr) + (dev->addr_len + sizeof(u32)) * 2;
-	}
+	/* ARP header, plus 2 device addresses, plus 2 IP addresses. */
+	return sizeof(struct arphdr) + (dev->addr_len + sizeof(u32)) * 2;
 }
+#endif
+
 #endif	/* _LINUX_IF_ARP_H */

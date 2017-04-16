@@ -1,8 +1,4 @@
 #include <linux/linkage.h>
-<<<<<<< HEAD
-=======
-#include <asm/assembler.h>
->>>>>>> android-4.9
 
 #if __LINUX_ARM_ARCH__ >= 6
 ENTRY(__bswapsi2)
@@ -22,11 +18,7 @@ ENTRY(__bswapsi2)
 	mov r3, r3, lsr #8
 	bic r3, r3, #0xff00
 	eor r0, r3, r0, ror #8
-<<<<<<< HEAD
 	mov pc, lr
-=======
-	ret lr
->>>>>>> android-4.9
 ENDPROC(__bswapsi2)
 
 ENTRY(__bswapdi2)
@@ -39,10 +31,6 @@ ENTRY(__bswapdi2)
 	bic r1, r1, #0xff00
 	eor r1, r1, r0, ror #8
 	eor r0, r3, ip, ror #8
-<<<<<<< HEAD
 	mov pc, lr
-=======
-	ret lr
->>>>>>> android-4.9
 ENDPROC(__bswapdi2)
 #endif

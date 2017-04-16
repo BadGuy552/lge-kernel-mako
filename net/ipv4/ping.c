@@ -52,35 +52,24 @@
 #include <net/ipv6.h>
 #include <net/transp_v6.h>
 #endif
-<<<<<<< HEAD
 
 
 struct ping_table ping_table;
-=======
-
-struct ping_table {
-	struct hlist_nulls_head	hash[PING_HTABLE_SIZE];
-	rwlock_t		lock;
-};
-
-static struct ping_table ping_table;
->>>>>>> android-4.9
 struct pingv6_ops pingv6_ops;
 EXPORT_SYMBOL_GPL(pingv6_ops);
 
 static u16 ping_port_rover;
 
-static inline u32 ping_hashfn(const struct net *net, u32 num, u32 mask)
+static inline int ping_hashfn(struct net *net, unsigned num, unsigned mask)
 {
-	u32 res = (num + net_hash_mix(net)) & mask;
-
-	pr_debug("hash(%u) = %u\n", num, res);
+	int res = (num + net_hash_mix(net)) & mask;
+	pr_debug("hash(%d) = %d\n", num, res);
 	return res;
 }
 EXPORT_SYMBOL_GPL(ping_hash);
 
 static inline struct hlist_nulls_head *ping_hashslot(struct ping_table *table,
-					     struct net *net, unsigned int num)
+					     struct net *net, unsigned num)
 {
 	return &table->hash[ping_hashfn(net, num, PING_HTABLE_MASK)];
 }
@@ -151,16 +140,10 @@ fail:
 }
 EXPORT_SYMBOL_GPL(ping_get_port);
 
-<<<<<<< HEAD
 void ping_hash(struct sock *sk)
-=======
-int ping_hash(struct sock *sk)
->>>>>>> android-4.9
 {
 	pr_debug("ping_hash(sk->port=%u)\n", inet_sk(sk)->inet_num);
 	BUG(); /* "Please do not press this button again." */
-
-	return 0;
 }
 
 void ping_unhash(struct sock *sk)
@@ -219,7 +202,6 @@ static struct sock *ping_lookup(struct net *net, struct sk_buff *skb, u16 ident)
 #if IS_ENABLED(CONFIG_IPV6)
 		} else if (skb->protocol == htons(ETH_P_IPV6) &&
 			   sk->sk_family == AF_INET6) {
-<<<<<<< HEAD
 			struct ipv6_pinfo *np = inet6_sk(sk);
 
 			pr_debug("found: %p: num=%d, daddr=%pI6c, dif=%d\n", sk,
@@ -229,16 +211,6 @@ static struct sock *ping_lookup(struct net *net, struct sk_buff *skb, u16 ident)
 
 			if (!ipv6_addr_any(&np->rcv_saddr) &&
 			    !ipv6_addr_equal(&np->rcv_saddr,
-=======
-
-			pr_debug("found: %p: num=%d, daddr=%pI6c, dif=%d\n", sk,
-				 (int) isk->inet_num,
-				 &sk->sk_v6_rcv_saddr,
-				 sk->sk_bound_dev_if);
-
-			if (!ipv6_addr_any(&sk->sk_v6_rcv_saddr) &&
-			    !ipv6_addr_equal(&sk->sk_v6_rcv_saddr,
->>>>>>> android-4.9
 					     &ipv6_hdr(skb)->daddr))
 				continue;
 #endif
@@ -260,25 +232,23 @@ exit:
 	return sk;
 }
 
-static void inet_get_ping_group_range_net(struct net *net, kgid_t *low,
-					  kgid_t *high)
+static void inet_get_ping_group_range_net(struct net *net, gid_t *low,
+					  gid_t *high)
 {
-	kgid_t *data = net->ipv4.ping_group_range.range;
-	unsigned int seq;
-
+	gid_t *data = net->ipv4.sysctl_ping_group_range;
+	unsigned seq;
 	do {
-		seq = read_seqbegin(&net->ipv4.ping_group_range.lock);
+		seq = read_seqbegin(&sysctl_local_ports.lock);
 
 		*low = data[0];
 		*high = data[1];
-	} while (read_seqretry(&net->ipv4.ping_group_range.lock, seq));
+	} while (read_seqretry(&sysctl_local_ports.lock, seq));
 }
 
 
 int ping_init_sock(struct sock *sk)
 {
 	struct net *net = sock_net(sk);
-<<<<<<< HEAD
 	gid_t group = current_egid();
 	gid_t range[2];
 	struct group_info *group_info;
@@ -287,18 +257,11 @@ int ping_init_sock(struct sock *sk)
 
 	if (sk->sk_family == AF_INET6)
 		inet6_sk(sk)->ipv6only = 1;
-=======
-	kgid_t group = current_egid();
-	struct group_info *group_info;
-	int i;
-	kgid_t low, high;
-	int ret = 0;
->>>>>>> android-4.9
 
-	if (sk->sk_family == AF_INET6)
-		sk->sk_ipv6only = 1;
+	inet_get_ping_group_range_net(net, range, range+1);
+	if (range[0] <= group && group <= range[1])
+		return 0;
 
-<<<<<<< HEAD
 	group_info = get_current_groups();
 	count = group_info->ngroups;
 	for (i = 0; i < group_info->nblocks; i++) {
@@ -309,18 +272,8 @@ int ping_init_sock(struct sock *sk)
 			if (range[0] <= group && group <= range[1])
 				goto out_release_group;
 		}
-=======
-	inet_get_ping_group_range_net(net, &low, &high);
-	if (gid_lte(low, group) && gid_lte(group, high))
-		return 0;
 
-	group_info = get_current_groups();
-	for (i = 0; i < group_info->ngroups; i++) {
-		kgid_t gid = group_info->gid[i];
->>>>>>> android-4.9
-
-		if (gid_lte(low, gid) && gid_lte(gid, high))
-			goto out_release_group;
+		count -= cp_count;
 	}
 
 	ret = -EACCES;
@@ -342,13 +295,8 @@ void ping_close(struct sock *sk, long timeout)
 EXPORT_SYMBOL_GPL(ping_close);
 
 /* Checks the bind address and possibly modifies sk->sk_bound_dev_if. */
-<<<<<<< HEAD
 int ping_check_bind_addr(struct sock *sk, struct inet_sock *isk,
 			 struct sockaddr *uaddr, int addr_len) {
-=======
-static int ping_check_bind_addr(struct sock *sk, struct inet_sock *isk,
-				struct sockaddr *uaddr, int addr_len) {
->>>>>>> android-4.9
 	struct net *net = sock_net(sk);
 	if (sk->sk_family == AF_INET) {
 		struct sockaddr_in *addr = (struct sockaddr_in *) uaddr;
@@ -370,11 +318,7 @@ static int ping_check_bind_addr(struct sock *sk, struct inet_sock *isk,
 		if (addr->sin_addr.s_addr == htonl(INADDR_ANY))
 			chk_addr_ret = RTN_LOCAL;
 
-<<<<<<< HEAD
 		if ((sysctl_ip_nonlocal_bind == 0 &&
-=======
-		if ((net->ipv4.sysctl_ip_nonlocal_bind == 0 &&
->>>>>>> android-4.9
 		    isk->freebind == 0 && isk->transparent == 0 &&
 		     chk_addr_ret != RTN_LOCAL) ||
 		    chk_addr_ret == RTN_MULTICAST ||
@@ -415,12 +359,7 @@ static int ping_check_bind_addr(struct sock *sk, struct inet_sock *isk,
 						    scoped);
 		rcu_read_unlock();
 
-<<<<<<< HEAD
 		if (!(isk->freebind || isk->transparent || has_addr ||
-=======
-		if (!(net->ipv6.sysctl.ip_nonlocal_bind ||
-		      isk->freebind || isk->transparent || has_addr ||
->>>>>>> android-4.9
 		      addr_type == IPV6_ADDR_ANY))
 			return -EADDRNOTAVAIL;
 
@@ -433,11 +372,7 @@ static int ping_check_bind_addr(struct sock *sk, struct inet_sock *isk,
 	return 0;
 }
 
-<<<<<<< HEAD
 void ping_set_saddr(struct sock *sk, struct sockaddr *saddr)
-=======
-static void ping_set_saddr(struct sock *sk, struct sockaddr *saddr)
->>>>>>> android-4.9
 {
 	if (saddr->sa_family == AF_INET) {
 		struct inet_sock *isk = inet_sk(sk);
@@ -447,20 +382,12 @@ static void ping_set_saddr(struct sock *sk, struct sockaddr *saddr)
 	} else if (saddr->sa_family == AF_INET6) {
 		struct sockaddr_in6 *addr = (struct sockaddr_in6 *) saddr;
 		struct ipv6_pinfo *np = inet6_sk(sk);
-<<<<<<< HEAD
 		np->rcv_saddr = np->saddr = addr->sin6_addr;
-=======
-		sk->sk_v6_rcv_saddr = np->saddr = addr->sin6_addr;
->>>>>>> android-4.9
 #endif
 	}
 }
 
-<<<<<<< HEAD
 void ping_clear_saddr(struct sock *sk, int dif)
-=======
-static void ping_clear_saddr(struct sock *sk, int dif)
->>>>>>> android-4.9
 {
 	sk->sk_bound_dev_if = dif;
 	if (sk->sk_family == AF_INET) {
@@ -469,11 +396,7 @@ static void ping_clear_saddr(struct sock *sk, int dif)
 #if IS_ENABLED(CONFIG_IPV6)
 	} else if (sk->sk_family == AF_INET6) {
 		struct ipv6_pinfo *np = inet6_sk(sk);
-<<<<<<< HEAD
 		memset(&np->rcv_saddr, 0, sizeof(np->rcv_saddr));
-=======
-		memset(&sk->sk_v6_rcv_saddr, 0, sizeof(sk->sk_v6_rcv_saddr));
->>>>>>> android-4.9
 		memset(&np->saddr, 0, sizeof(np->saddr));
 #endif
 	}
@@ -513,19 +436,10 @@ int ping_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 		 (int)sk->sk_bound_dev_if);
 
 	err = 0;
-<<<<<<< HEAD
 	if ((sk->sk_family == AF_INET && isk->inet_rcv_saddr) ||
 	    (sk->sk_family == AF_INET6 &&
 	     !ipv6_addr_any(&inet6_sk(sk)->rcv_saddr)))
 		sk->sk_userlocks |= SOCK_BINDADDR_LOCK;
-=======
-	if (sk->sk_family == AF_INET && isk->inet_rcv_saddr)
-		sk->sk_userlocks |= SOCK_BINDADDR_LOCK;
-#if IS_ENABLED(CONFIG_IPV6)
-	if (sk->sk_family == AF_INET6 && !ipv6_addr_any(&sk->sk_v6_rcv_saddr))
-		sk->sk_userlocks |= SOCK_BINDADDR_LOCK;
-#endif
->>>>>>> android-4.9
 
 	if (snum)
 		sk->sk_userlocks |= SOCK_BINDPORT_LOCK;
@@ -535,11 +449,7 @@ int ping_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 
 #if IS_ENABLED(CONFIG_IPV6)
 	if (sk->sk_family == AF_INET6)
-<<<<<<< HEAD
 		memset(&inet6_sk(sk)->daddr, 0, sizeof(inet6_sk(sk)->daddr));
-=======
-		memset(&sk->sk_v6_daddr, 0, sizeof(sk->sk_v6_daddr));
->>>>>>> android-4.9
 #endif
 
 	sk_dst_reset(sk);
@@ -578,11 +488,8 @@ void ping_err(struct sk_buff *skb, int offset, u32 info)
 	int err;
 
 	if (skb->protocol == htons(ETH_P_IP)) {
-<<<<<<< HEAD
 		struct iphdr *iph = (struct iphdr *)skb->data;
 		offset = iph->ihl << 2;
-=======
->>>>>>> android-4.9
 		family = AF_INET;
 		type = icmp_hdr(skb)->type;
 		code = icmp_hdr(skb)->code;
@@ -606,11 +513,7 @@ void ping_err(struct sk_buff *skb, int offset, u32 info)
 		 ntohs(icmph->un.echo.sequence));
 
 	sk = ping_lookup(net, skb, ntohs(icmph->un.echo.id));
-<<<<<<< HEAD
 	if (sk == NULL) {
-=======
-	if (!sk) {
->>>>>>> android-4.9
 		pr_debug("no socket, dropping\n");
 		return;	/* No socket for error */
 	}
@@ -628,12 +531,7 @@ void ping_err(struct sk_buff *skb, int offset, u32 info)
 			break;
 		case ICMP_SOURCE_QUENCH:
 			/* This is not a real error but ping wants to see it.
-<<<<<<< HEAD
 			 * Report it with some fake errno. */
-=======
-			 * Report it with some fake errno.
-			 */
->>>>>>> android-4.9
 			err = EREMOTEIO;
 			break;
 		case ICMP_PARAMETERPROB:
@@ -642,10 +540,6 @@ void ping_err(struct sk_buff *skb, int offset, u32 info)
 			break;
 		case ICMP_DEST_UNREACH:
 			if (code == ICMP_FRAG_NEEDED) { /* Path MTU discovery */
-<<<<<<< HEAD
-=======
-				ipv4_sk_update_pmtu(skb, sk, info);
->>>>>>> android-4.9
 				if (inet_sock->pmtudisc != IP_PMTUDISC_DONT) {
 					err = EMSGSIZE;
 					harderr = 1;
@@ -661,10 +555,6 @@ void ping_err(struct sk_buff *skb, int offset, u32 info)
 			break;
 		case ICMP_REDIRECT:
 			/* See ICMP_SOURCE_QUENCH */
-<<<<<<< HEAD
-=======
-			ipv4_sk_redirect(skb, sk);
->>>>>>> android-4.9
 			err = EREMOTEIO;
 			break;
 		}
@@ -699,14 +589,11 @@ out:
 	sock_put(sk);
 }
 EXPORT_SYMBOL_GPL(ping_err);
-<<<<<<< HEAD
 
 void ping_v4_err(struct sk_buff *skb, u32 info)
 {
 	ping_err(skb, 0, info);
 }
-=======
->>>>>>> android-4.9
 
 /*
  *	Copy and checksum an ICMP Echo packet from user space into a buffer
@@ -719,20 +606,12 @@ int ping_getfrag(void *from, char *to,
 	struct pingfakehdr *pfh = (struct pingfakehdr *)from;
 
 	if (offset == 0) {
-		fraglen -= sizeof(struct icmphdr);
-		if (fraglen < 0)
+		if (fraglen < sizeof(struct icmphdr))
 			BUG();
-		if (csum_and_copy_from_iter(to + sizeof(struct icmphdr),
-			    fraglen, &pfh->wcheck,
-			    &pfh->msg->msg_iter) != fraglen)
+		if (csum_partial_copy_fromiovecend(to + sizeof(struct icmphdr),
+			    pfh->iov, 0, fraglen - sizeof(struct icmphdr),
+			    &pfh->wcheck))
 			return -EFAULT;
-	} else if (offset < sizeof(struct icmphdr)) {
-			BUG();
-	} else {
-		if (csum_and_copy_from_iter(to, fraglen, &pfh->wcheck,
-					    &pfh->msg->msg_iter) != fraglen)
-			return -EFAULT;
-<<<<<<< HEAD
 	} else if (offset < sizeof(struct icmphdr)) {
 			BUG();
 	} else {
@@ -740,8 +619,6 @@ int ping_getfrag(void *from, char *to,
 				(to, pfh->iov, offset - sizeof(struct icmphdr),
 				 fraglen, &pfh->wcheck))
 			return -EFAULT;
-=======
->>>>>>> android-4.9
 	}
 
 #if IS_ENABLED(CONFIG_IPV6)
@@ -765,8 +642,6 @@ static int ping_v4_push_pending_frames(struct sock *sk, struct pingfakehdr *pfh,
 {
 	struct sk_buff *skb = skb_peek(&sk->sk_write_queue);
 
-	if (!skb)
-		return 0;
 	pfh->wcheck = csum_partial((char *)&pfh->icmph,
 		sizeof(struct icmphdr), pfh->wcheck);
 	pfh->icmph.checksum = csum_fold(pfh->wcheck);
@@ -782,10 +657,6 @@ int ping_common_sendmsg(int family, struct msghdr *msg, size_t len,
 	if (len > 0xFFFF)
 		return -EMSGSIZE;
 
-	/* Must have at least a full ICMP header. */
-	if (len < icmph_len)
-		return -EINVAL;
-
 	/*
 	 *	Check the flags.
 	 */
@@ -798,11 +669,7 @@ int ping_common_sendmsg(int family, struct msghdr *msg, size_t len,
 	 *	Fetch the ICMP header provided by the userland.
 	 *	iovec is modified! The ICMP header is consumed.
 	 */
-<<<<<<< HEAD
 	if (memcpy_fromiovec(user_icmph, msg->msg_iov, icmph_len))
-=======
-	if (memcpy_from_msg(user_icmph, msg, icmph_len))
->>>>>>> android-4.9
 		return -EFAULT;
 
 	if (family == AF_INET) {
@@ -824,12 +691,8 @@ int ping_common_sendmsg(int family, struct msghdr *msg, size_t len,
 }
 EXPORT_SYMBOL_GPL(ping_common_sendmsg);
 
-<<<<<<< HEAD
 int ping_v4_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		    size_t len)
-=======
-static int ping_v4_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
->>>>>>> android-4.9
 {
 	struct net *net = sock_net(sk);
 	struct flowi4 fl4;
@@ -856,7 +719,7 @@ static int ping_v4_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 	 */
 
 	if (msg->msg_name) {
-		DECLARE_SOCKADDR(struct sockaddr_in *, usin, msg->msg_name);
+		struct sockaddr_in *usin = (struct sockaddr_in *)msg->msg_name;
 		if (msg->msg_namelen < sizeof(*usin))
 			return -EINVAL;
 		if (usin->sin_family != AF_INET)
@@ -870,20 +733,18 @@ static int ping_v4_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 		/* no remote port */
 	}
 
-	ipc.sockc.tsflags = sk->sk_tsflags;
 	ipc.addr = inet->inet_saddr;
 	ipc.opt = NULL;
 	ipc.oif = sk->sk_bound_dev_if;
 	ipc.tx_flags = 0;
-	ipc.ttl = 0;
-	ipc.tos = -1;
+	err = sock_tx_timestamp(sk, &ipc.tx_flags);
+	if (err)
+		return err;
 
 	if (msg->msg_controllen) {
-		err = ip_cmsg_send(sk, msg, &ipc, false);
-		if (unlikely(err)) {
-			kfree(ipc.opt);
+		err = ip_cmsg_send(sock_net(sk), msg, &ipc);
+		if (err)
 			return err;
-		}
 		if (ipc.opt)
 			free = 1;
 	}
@@ -900,8 +761,6 @@ static int ping_v4_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 		rcu_read_unlock();
 	}
 
-	sock_tx_timestamp(sk, ipc.sockc.tsflags, &ipc.tx_flags);
-
 	saddr = ipc.addr;
 	ipc.addr = faddr = daddr;
 
@@ -910,7 +769,7 @@ static int ping_v4_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 			return -EINVAL;
 		faddr = ipc.opt->opt.faddr;
 	}
-	tos = get_rttos(&ipc, inet);
+	tos = RT_TOS(inet->tos);
 	if (sock_flag(sk, SOCK_LOCALROUTE) ||
 	    (msg->msg_flags & MSG_DONTROUTE) ||
 	    (ipc.opt && ipc.opt->opt.is_strictroute)) {
@@ -928,11 +787,7 @@ static int ping_v4_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 	flowi4_init_output(&fl4, ipc.oif, sk->sk_mark, tos,
 			   RT_SCOPE_UNIVERSE, sk->sk_protocol,
 			   inet_sk_flowi_flags(sk), faddr, saddr, 0, 0,
-<<<<<<< HEAD
 			   sock_i_uid(sk));
-=======
-			   sk->sk_uid);
->>>>>>> android-4.9
 
 	security_sk_classify_flow(sk, flowi4_to_flowi(&fl4));
 	rt = ip_route_output_flow(net, &fl4, sk);
@@ -940,7 +795,7 @@ static int ping_v4_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 		err = PTR_ERR(rt);
 		rt = NULL;
 		if (err == -ENETUNREACH)
-			IP_INC_STATS(net, IPSTATS_MIB_OUTNOROUTES);
+			IP_INC_STATS_BH(net, IPSTATS_MIB_OUTNOROUTES);
 		goto out;
 	}
 
@@ -963,7 +818,7 @@ back_from_confirm:
 	pfh.icmph.checksum = 0;
 	pfh.icmph.un.echo.id = inet->inet_sport;
 	pfh.icmph.un.echo.sequence = user_icmph.un.echo.sequence;
-	pfh.msg = msg;
+	pfh.iov = msg->msg_iov;
 	pfh.wcheck = 0;
 	pfh.family = AF_INET;
 
@@ -993,7 +848,6 @@ do_confirm:
 	goto out;
 }
 
-<<<<<<< HEAD
 int ping_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		 size_t len, int noblock, int flags, int *addr_len)
 {
@@ -1001,13 +855,6 @@ int ping_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	int family = sk->sk_family;
 	struct sockaddr_in *sin;
 	struct sockaddr_in6 *sin6;
-=======
-int ping_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int noblock,
-		 int flags, int *addr_len)
-{
-	struct inet_sock *isk = inet_sk(sk);
-	int family = sk->sk_family;
->>>>>>> android-4.9
 	struct sk_buff *skb;
 	int copied, err;
 
@@ -1017,7 +864,6 @@ int ping_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int noblock,
 	if (flags & MSG_OOB)
 		goto out;
 
-<<<<<<< HEAD
 	if (addr_len) {
 		if (family == AF_INET)
 			*addr_len = sizeof(*sin);
@@ -1034,10 +880,6 @@ int ping_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int noblock,
 #endif
 		}
 	}
-=======
-	if (flags & MSG_ERRQUEUE)
-		return inet_recv_error(sk, msg, len, addr_len);
->>>>>>> android-4.9
 
 	skb = skb_recv_datagram(sk, flags, noblock, &err);
 	if (!skb)
@@ -1050,7 +892,7 @@ int ping_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int noblock,
 	}
 
 	/* Don't bother checking the checksum */
-	err = skb_copy_datagram_msg(skb, 0, msg, copied);
+	err = skb_copy_datagram_iovec(skb, 0, msg->msg_iov, copied);
 	if (err)
 		goto done;
 
@@ -1058,21 +900,12 @@ int ping_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int noblock,
 
 	/* Copy the address and add cmsg data. */
 	if (family == AF_INET) {
-<<<<<<< HEAD
 		sin = (struct sockaddr_in *) msg->msg_name;
-=======
-		DECLARE_SOCKADDR(struct sockaddr_in *, sin, msg->msg_name);
-
->>>>>>> android-4.9
 		if (sin) {
 			sin->sin_family = AF_INET;
 			sin->sin_port = 0 /* skb->h.uh->source */;
 			sin->sin_addr.s_addr = ip_hdr(skb)->saddr;
 			memset(sin->sin_zero, 0, sizeof(sin->sin_zero));
-<<<<<<< HEAD
-=======
-			*addr_len = sizeof(*sin);
->>>>>>> android-4.9
 		}
 
 		if (isk->cmsg_flags)
@@ -1082,11 +915,7 @@ int ping_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int noblock,
 	} else if (family == AF_INET6) {
 		struct ipv6_pinfo *np = inet6_sk(sk);
 		struct ipv6hdr *ip6 = ipv6_hdr(skb);
-<<<<<<< HEAD
 		sin6 = (struct sockaddr_in6 *) msg->msg_name;
-=======
-		DECLARE_SOCKADDR(struct sockaddr_in6 *, sin6, msg->msg_name);
->>>>>>> android-4.9
 
 		if (sin6) {
 			sin6->sin6_family = AF_INET6;
@@ -1094,7 +923,6 @@ int ping_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int noblock,
 			sin6->sin6_addr = ip6->saddr;
 			sin6->sin6_flowinfo = 0;
 			if (np->sndflow)
-<<<<<<< HEAD
 				sin6->sin6_flowinfo =
 					*(__be32 *)ip6 & IPV6_FLOWINFO_MASK;
 			sin6->sin6_scope_id =
@@ -1104,22 +932,6 @@ int ping_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int noblock,
 
 		if (inet6_sk(sk)->rxopt.all)
 			pingv6_ops.datagram_recv_ctl(sk, msg, skb);
-=======
-				sin6->sin6_flowinfo = ip6_flowinfo(ip6);
-			sin6->sin6_scope_id =
-				ipv6_iface_scope_id(&sin6->sin6_addr,
-						    inet6_iif(skb));
-			*addr_len = sizeof(*sin6);
-		}
-
-		if (inet6_sk(sk)->rxopt.all)
-			pingv6_ops.ip6_datagram_recv_common_ctl(sk, msg, skb);
-		if (skb->protocol == htons(ETH_P_IPV6) &&
-		    inet6_sk(sk)->rxopt.all)
-			pingv6_ops.ip6_datagram_recv_specific_ctl(sk, msg, skb);
-		else if (skb->protocol == htons(ETH_P_IP) && isk->cmsg_flags)
-			ip_cmsg_recv(msg, skb);
->>>>>>> android-4.9
 #endif
 	} else {
 		BUG();
@@ -1153,7 +965,7 @@ EXPORT_SYMBOL_GPL(ping_queue_rcv_skb);
  *	All we need to do is get the socket.
  */
 
-bool ping_rcv(struct sk_buff *skb)
+void ping_rcv(struct sk_buff *skb)
 {
 	struct sock *sk;
 	struct net *net = dev_net(skb->dev);
@@ -1168,22 +980,15 @@ bool ping_rcv(struct sk_buff *skb)
 	skb_push(skb, skb->data - (u8 *)icmph);
 
 	sk = ping_lookup(net, skb, ntohs(icmph->un.echo.id));
-<<<<<<< HEAD
 	if (sk != NULL) {
-=======
-	if (sk) {
-		struct sk_buff *skb2 = skb_clone(skb, GFP_ATOMIC);
-
->>>>>>> android-4.9
 		pr_debug("rcv on socket %p\n", sk);
-		if (skb2)
-			ping_queue_rcv_skb(sk, skb2);
+		ping_queue_rcv_skb(sk, skb_get(skb));
 		sock_put(sk);
-		return true;
+		return;
 	}
 	pr_debug("no socket, dropping\n");
 
-	return false;
+	/* We're called from icmp_rcv(). kfree_skb() is done there. */
 }
 EXPORT_SYMBOL_GPL(ping_rcv);
 
@@ -1193,17 +998,13 @@ struct proto ping_prot = {
 	.init =		ping_init_sock,
 	.close =	ping_close,
 	.connect =	ip4_datagram_connect,
-	.disconnect =	__udp_disconnect,
+	.disconnect =	udp_disconnect,
 	.setsockopt =	ip_setsockopt,
 	.getsockopt =	ip_getsockopt,
 	.sendmsg =	ping_v4_sendmsg,
 	.recvmsg =	ping_recvmsg,
 	.bind =		ping_bind,
 	.backlog_rcv =	ping_queue_rcv_skb,
-<<<<<<< HEAD
-=======
-	.release_cb =	ip4_datagram_release_cb,
->>>>>>> android-4.9
 	.hash =		ping_hash,
 	.unhash =	ping_unhash,
 	.get_port =	ping_get_port,
@@ -1230,8 +1031,7 @@ static struct sock *ping_get_first(struct seq_file *seq, int start)
 			continue;
 
 		sk_nulls_for_each(sk, node, hslot) {
-			if (net_eq(sock_net(sk), net) &&
-			    sk->sk_family == state->family)
+			if (net_eq(sock_net(sk), net))
 				goto found;
 		}
 	}
@@ -1264,25 +1064,17 @@ static struct sock *ping_get_idx(struct seq_file *seq, loff_t pos)
 	return pos ? NULL : sk;
 }
 
-void *ping_seq_start(struct seq_file *seq, loff_t *pos, sa_family_t family)
-	__acquires(ping_table.lock)
+static void *ping_seq_start(struct seq_file *seq, loff_t *pos)
 {
 	struct ping_iter_state *state = seq->private;
 	state->bucket = 0;
-	state->family = family;
 
 	read_lock_bh(&ping_table.lock);
 
 	return *pos ? ping_get_idx(seq, *pos-1) : SEQ_START_TOKEN;
 }
-EXPORT_SYMBOL_GPL(ping_seq_start);
 
-static void *ping_v4_seq_start(struct seq_file *seq, loff_t *pos)
-{
-	return ping_seq_start(seq, pos, AF_INET);
-}
-
-void *ping_seq_next(struct seq_file *seq, void *v, loff_t *pos)
+static void *ping_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 {
 	struct sock *sk;
 
@@ -1294,17 +1086,14 @@ void *ping_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 	++*pos;
 	return sk;
 }
-EXPORT_SYMBOL_GPL(ping_seq_next);
 
-void ping_seq_stop(struct seq_file *seq, void *v)
-	__releases(ping_table.lock)
+static void ping_seq_stop(struct seq_file *seq, void *v)
 {
 	read_unlock_bh(&ping_table.lock);
 }
-EXPORT_SYMBOL_GPL(ping_seq_stop);
 
-static void ping_v4_format_sock(struct sock *sp, struct seq_file *f,
-		int bucket)
+static void ping_format_sock(struct sock *sp, struct seq_file *f,
+		int bucket, int *len)
 {
 	struct inet_sock *inet = inet_sk(sp);
 	__be32 dest = inet->inet_daddr;
@@ -1313,100 +1102,92 @@ static void ping_v4_format_sock(struct sock *sp, struct seq_file *f,
 	__u16 srcp = ntohs(inet->inet_sport);
 
 	seq_printf(f, "%5d: %08X:%04X %08X:%04X"
-		" %02X %08X:%08X %02X:%08lX %08X %5u %8d %lu %d %pK %d",
+		" %02X %08X:%08X %02X:%08lX %08X %5d %8d %lu %d %pK %d%n",
 		bucket, src, srcp, dest, destp, sp->sk_state,
 		sk_wmem_alloc_get(sp),
 		sk_rmem_alloc_get(sp),
-		0, 0L, 0,
-		from_kuid_munged(seq_user_ns(f), sock_i_uid(sp)),
-		0, sock_i_ino(sp),
+		0, 0L, 0, sock_i_uid(sp), 0, sock_i_ino(sp),
 		atomic_read(&sp->sk_refcnt), sp,
-		atomic_read(&sp->sk_drops));
+		atomic_read(&sp->sk_drops), len);
 }
 
-static int ping_v4_seq_show(struct seq_file *seq, void *v)
+static int ping_seq_show(struct seq_file *seq, void *v)
 {
-	seq_setwidth(seq, 127);
 	if (v == SEQ_START_TOKEN)
-		seq_puts(seq, "  sl  local_address rem_address   st tx_queue "
+		seq_printf(seq, "%-127s\n",
+			   "  sl  local_address rem_address   st tx_queue "
 			   "rx_queue tr tm->when retrnsmt   uid  timeout "
 			   "inode ref pointer drops");
 	else {
 		struct ping_iter_state *state = seq->private;
+		int len;
 
-		ping_v4_format_sock(v, seq, state->bucket);
+		ping_format_sock(v, seq, state->bucket, &len);
+		seq_printf(seq, "%*s\n", 127 - len, "");
 	}
-	seq_pad(seq, '\n');
 	return 0;
 }
 
+static const struct seq_operations ping_seq_ops = {
+	.show		= ping_seq_show,
+	.start		= ping_seq_start,
+	.next		= ping_seq_next,
+	.stop		= ping_seq_stop,
+};
+
 static int ping_seq_open(struct inode *inode, struct file *file)
 {
-	struct ping_seq_afinfo *afinfo = PDE_DATA(inode);
-	return seq_open_net(inode, file, &afinfo->seq_ops,
+	return seq_open_net(inode, file, &ping_seq_ops,
 			   sizeof(struct ping_iter_state));
 }
 
-const struct file_operations ping_seq_fops = {
+static const struct file_operations ping_seq_fops = {
 	.open		= ping_seq_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,
 	.release	= seq_release_net,
 };
-EXPORT_SYMBOL_GPL(ping_seq_fops);
 
-static struct ping_seq_afinfo ping_v4_seq_afinfo = {
-	.name		= "icmp",
-	.family		= AF_INET,
-	.seq_fops	= &ping_seq_fops,
-	.seq_ops	= {
-		.start		= ping_v4_seq_start,
-		.show		= ping_v4_seq_show,
-		.next		= ping_seq_next,
-		.stop		= ping_seq_stop,
-	},
-};
-
-int ping_proc_register(struct net *net, struct ping_seq_afinfo *afinfo)
+static int ping_proc_register(struct net *net)
 {
 	struct proc_dir_entry *p;
-	p = proc_create_data(afinfo->name, S_IRUGO, net->proc_net,
-			     afinfo->seq_fops, afinfo);
+	int rc = 0;
+
+	p = proc_net_fops_create(net, "icmp", S_IRUGO, &ping_seq_fops);
 	if (!p)
-		return -ENOMEM;
-	return 0;
+		rc = -ENOMEM;
+	return rc;
 }
-EXPORT_SYMBOL_GPL(ping_proc_register);
 
-void ping_proc_unregister(struct net *net, struct ping_seq_afinfo *afinfo)
+static void ping_proc_unregister(struct net *net)
 {
-	remove_proc_entry(afinfo->name, net->proc_net);
+	proc_net_remove(net, "icmp");
 }
-EXPORT_SYMBOL_GPL(ping_proc_unregister);
 
-static int __net_init ping_v4_proc_init_net(struct net *net)
+
+static int __net_init ping_proc_init_net(struct net *net)
 {
-	return ping_proc_register(net, &ping_v4_seq_afinfo);
+	return ping_proc_register(net);
 }
 
-static void __net_exit ping_v4_proc_exit_net(struct net *net)
+static void __net_exit ping_proc_exit_net(struct net *net)
 {
-	ping_proc_unregister(net, &ping_v4_seq_afinfo);
+	ping_proc_unregister(net);
 }
 
-static struct pernet_operations ping_v4_net_ops = {
-	.init = ping_v4_proc_init_net,
-	.exit = ping_v4_proc_exit_net,
+static struct pernet_operations ping_net_ops = {
+	.init = ping_proc_init_net,
+	.exit = ping_proc_exit_net,
 };
 
 int __init ping_proc_init(void)
 {
-	return register_pernet_subsys(&ping_v4_net_ops);
+	return register_pernet_subsys(&ping_net_ops);
 }
 
 void ping_proc_exit(void)
 {
-	unregister_pernet_subsys(&ping_v4_net_ops);
+	unregister_pernet_subsys(&ping_net_ops);
 }
 
 #endif

@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 #if !defined(_ASM_GENERIC_UNISTD_H) || defined(__SYSCALL)
 #define _ASM_GENERIC_UNISTD_H
 
@@ -906,10 +905,6 @@ __SYSCALL(__NR_fork, sys_ni_syscall)
 #endif
 
 #ifdef __KERNEL__
-=======
-#include <uapi/asm-generic/unistd.h>
-#include <linux/export.h>
->>>>>>> android-4.9
 
 /*
  * These are required system calls, we should
@@ -920,3 +915,19 @@ __SYSCALL(__NR_fork, sys_ni_syscall)
 #define __ARCH_WANT_STAT64
 #define __ARCH_WANT_SYS_LLSEEK
 #endif
+#define __ARCH_WANT_SYS_RT_SIGACTION
+#define __ARCH_WANT_SYS_RT_SIGSUSPEND
+#define __ARCH_WANT_COMPAT_SYS_RT_SIGSUSPEND
+
+/*
+ * "Conditional" syscalls
+ *
+ * What we want is __attribute__((weak,alias("sys_ni_syscall"))),
+ * but it doesn't work on all toolchains, so we just do it by hand
+ */
+#ifndef cond_syscall
+#define cond_syscall(x) asm(".weak\t" #x "\n\t.set\t" #x ",sys_ni_syscall")
+#endif
+
+#endif /* __KERNEL__ */
+#endif /* _ASM_GENERIC_UNISTD_H */

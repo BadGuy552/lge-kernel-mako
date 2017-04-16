@@ -13,7 +13,6 @@
 #ifndef __ASM_ARM_UNISTD_H
 #define __ASM_ARM_UNISTD_H
 
-<<<<<<< HEAD
 #define __NR_OABI_SYSCALL_BASE	0x900000
 
 #if defined(__thumb__) || defined(__ARM_EABI__)
@@ -425,16 +424,30 @@
 #ifdef __KERNEL__
 #define __ARM_NR_cmpxchg		(__ARM_NR_BASE+0x00fff0)
 #endif
-=======
-#include <uapi/asm/unistd.h>
->>>>>>> android-4.9
 
 /*
- * This may need to be greater than __NR_last_syscall+1 in order to
- * account for the padding in the syscall table
+ * The following syscalls are obsolete and no longer available for EABI.
  */
-#define __NR_syscalls  (400)
+#if !defined(__KERNEL__)
+#if defined(__ARM_EABI__)
+#undef __NR_time
+#undef __NR_umount
+#undef __NR_stime
+#undef __NR_alarm
+#undef __NR_utime
+#undef __NR_getrlimit
+#undef __NR_select
+#undef __NR_readdir
+#undef __NR_mmap
+#undef __NR_socketcall
+#undef __NR_syscall
+#undef __NR_ipc
+#endif
+#endif
 
+#ifdef __KERNEL__
+
+#define __ARCH_WANT_IPC_PARSE_VERSION
 #define __ARCH_WANT_STAT64
 #define __ARCH_WANT_SYS_GETHOSTNAME
 #define __ARCH_WANT_SYS_PAUSE
@@ -443,6 +456,8 @@
 #define __ARCH_WANT_SYS_NICE
 #define __ARCH_WANT_SYS_SIGPENDING
 #define __ARCH_WANT_SYS_SIGPROCMASK
+#define __ARCH_WANT_SYS_RT_SIGACTION
+#define __ARCH_WANT_SYS_RT_SIGSUSPEND
 #define __ARCH_WANT_SYS_OLD_MMAP
 #define __ARCH_WANT_SYS_OLD_SELECT
 
@@ -456,9 +471,14 @@
 #define __ARCH_WANT_OLD_READDIR
 #define __ARCH_WANT_SYS_SOCKETCALL
 #endif
-#define __ARCH_WANT_SYS_FORK
-#define __ARCH_WANT_SYS_VFORK
-#define __ARCH_WANT_SYS_CLONE
+
+/*
+ * "Conditional" syscalls
+ *
+ * What we want is __attribute__((weak,alias("sys_ni_syscall"))),
+ * but it doesn't work on all toolchains, so we just do it by hand
+ */
+#define cond_syscall(x) asm(".weak\t" #x "\n\t.set\t" #x ",sys_ni_syscall")
 
 /*
  * Unimplemented (or alternatively implemented) syscalls
@@ -466,4 +486,5 @@
 #define __IGNORE_fadvise64_64
 #define __IGNORE_migrate_pages
 
+#endif /* __KERNEL__ */
 #endif /* __ASM_ARM_UNISTD_H */

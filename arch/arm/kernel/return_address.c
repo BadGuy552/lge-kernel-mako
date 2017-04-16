@@ -26,7 +26,7 @@ static int save_return_addr(struct stackframe *frame, void *d)
 	struct return_address_data *data = d;
 
 	if (!data->level) {
-		data->addr = (void *)frame->pc;
+		data->addr = (void *)frame->lr;
 
 		return 1;
 	} else {
@@ -39,12 +39,12 @@ void *return_address(unsigned int level)
 {
 	struct return_address_data data;
 	struct stackframe frame;
+	register unsigned long current_sp asm ("sp");
 
-	data.level = level + 2;
-	data.addr = NULL;
+	data.level = level + 1;
 
 	frame.fp = (unsigned long)__builtin_frame_address(0);
-	frame.sp = current_stack_pointer;
+	frame.sp = current_sp;
 	frame.lr = (unsigned long)__builtin_return_address(0);
 	frame.pc = (unsigned long)return_address;
 
@@ -56,7 +56,6 @@ void *return_address(unsigned int level)
 		return NULL;
 }
 
-<<<<<<< HEAD
 #else /* if defined(CONFIG_FRAME_POINTER) && !defined(CONFIG_ARM_UNWIND) */
 
 void *return_address(unsigned int level)
@@ -65,8 +64,5 @@ void *return_address(unsigned int level)
 }
 
 #endif /* if defined(CONFIG_FRAME_POINTER) && !defined(CONFIG_ARM_UNWIND) / else */
-=======
-#endif /* if defined(CONFIG_FRAME_POINTER) && !defined(CONFIG_ARM_UNWIND) */
->>>>>>> android-4.9
 
 EXPORT_SYMBOL_GPL(return_address);

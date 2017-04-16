@@ -18,7 +18,6 @@
 #ifndef __LINUX_KEYCHORD_H_
 #define __LINUX_KEYCHORD_H_
 
-<<<<<<< HEAD
 #include <linux/input.h>
 
 #define KEYCHORD_VERSION		1
@@ -49,8 +48,5 @@ struct input_keychord {
 	/* variable length array of keycodes */
 	__u16 keycodes[];
 };
-=======
-#include <uapi/linux/keychord.h>
->>>>>>> android-4.9
 
 #endif	/* __LINUX_KEYCHORD_H_ */

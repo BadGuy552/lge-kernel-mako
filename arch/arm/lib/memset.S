@@ -11,14 +11,11 @@
  */
 #include <linux/linkage.h>
 #include <asm/assembler.h>
-#include <asm/unwind.h>
 
 	.text
 	.align	5
 
-ENTRY(mmioset)
 ENTRY(memset)
-UNWIND( .fnstart         )
 	ands	r3, r0, #3		@ 1 unaligned?
 	mov	ip, r0			@ preserve r0 as return value
 	bne	6f			@ 1
@@ -37,12 +34,6 @@ UNWIND( .fnstart         )
  * We need 2 extra registers for this loop - use r8 and the LR
  */
 	stmfd	sp!, {r8, lr}
-<<<<<<< HEAD
-=======
-UNWIND( .fnend              )
-UNWIND( .fnstart            )
-UNWIND( .save {r8, lr}      )
->>>>>>> android-4.9
 	mov	r8, r1
 	mov	lr, r1
 
@@ -62,10 +53,6 @@ UNWIND( .save {r8, lr}      )
 	tst	r2, #16
 	stmneia	ip!, {r1, r3, r8, lr}
 	ldmfd	sp!, {r8, lr}
-<<<<<<< HEAD
-=======
-UNWIND( .fnend              )
->>>>>>> android-4.9
 
 #else
 
@@ -75,12 +62,6 @@ UNWIND( .fnend              )
  */
 
 	stmfd	sp!, {r4-r8, lr}
-<<<<<<< HEAD
-=======
-UNWIND( .fnend                 )
-UNWIND( .fnstart               )
-UNWIND( .save {r4-r8, lr}      )
->>>>>>> android-4.9
 	mov	r4, r1
 	mov	r5, r1
 	mov	r6, r1
@@ -113,14 +94,9 @@ UNWIND( .save {r4-r8, lr}      )
 	tst	r2, #16
 	stmneia	ip!, {r4-r7}
 	ldmfd	sp!, {r4-r8, lr}
-<<<<<<< HEAD
-=======
-UNWIND( .fnend                 )
->>>>>>> android-4.9
 
 #endif
 
-UNWIND( .fnstart            )
 4:	tst	r2, #8
 	stmneia	ip!, {r1, r3}
 	tst	r2, #4
@@ -134,11 +110,7 @@ UNWIND( .fnstart            )
 	strneb	r1, [ip], #1
 	tst	r2, #1
 	strneb	r1, [ip], #1
-<<<<<<< HEAD
 	mov	pc, lr
-=======
-	ret	lr
->>>>>>> android-4.9
 
 6:	subs	r2, r2, #4		@ 1 do we have enough
 	blt	5b			@ 1 bytes to align with?
@@ -148,9 +120,4 @@ UNWIND( .fnstart            )
 	strb	r1, [ip], #1		@ 1
 	add	r2, r2, r3		@ 1 (r2 = r2 - (4 - r3))
 	b	1b
-<<<<<<< HEAD
-=======
-UNWIND( .fnend   )
->>>>>>> android-4.9
 ENDPROC(memset)
-ENDPROC(mmioset)

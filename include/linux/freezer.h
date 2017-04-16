@@ -14,11 +14,6 @@ extern bool pm_freezing;		/* PM freezing in effect */
 extern bool pm_nosig_freezing;		/* PM nosig freezing in effect */
 
 /*
- * Timeout for stopping processes
- */
-extern unsigned int freeze_timeout_msecs;
-
-/*
  * Check if a process has been frozen
  */
 static inline bool frozen(struct task_struct *p)
@@ -48,7 +43,6 @@ extern void thaw_processes(void);
 extern void thaw_kernel_threads(void);
 
 /*
-<<<<<<< HEAD
  * HACK: prevent sleeping while atomic warnings due to ARM signal handling
  * disabling irqs
  */
@@ -60,8 +54,6 @@ static inline bool try_to_freeze_nowarn(void)
 }
 
 /*
-=======
->>>>>>> android-4.9
  * DO NOT ADD ANY NEW CALLERS OF THIS FUNCTION
  * If try_to_freeze causes a lockdep warning it means the caller may deadlock
  */
@@ -173,16 +165,10 @@ static inline bool freezer_should_skip(struct task_struct *p)
 }
 
 /*
-<<<<<<< HEAD
  * These functions are intended to be used whenever you want allow a task that's
  * sleeping in TASK_UNINTERRUPTIBLE or TASK_KILLABLE state to be frozen. Note
  * that neither return any clear indication of whether a freeze event happened
  * while in this function.
-=======
- * These functions are intended to be used whenever you want allow a sleeping
- * task to be frozen. Note that neither return any clear indication of
- * whether a freeze event happened while in this function.
->>>>>>> android-4.9
  */
 
 /* Like schedule(), but should not block the freezer. */
@@ -252,11 +238,7 @@ static inline long freezable_schedule_timeout_killable_unsafe(long timeout)
  * call this with locks held.
  */
 static inline int freezable_schedule_hrtimeout_range(ktime_t *expires,
-<<<<<<< HEAD
 		unsigned long delta, const enum hrtimer_mode mode)
-=======
-		u64 delta, const enum hrtimer_mode mode)
->>>>>>> android-4.9
 {
 	int __retval;
 	freezer_do_not_count();
@@ -271,13 +253,11 @@ static inline int freezable_schedule_hrtimeout_range(ktime_t *expires,
  * defined in <linux/wait.h>
  */
 
-/* DO NOT ADD ANY NEW CALLERS OF THIS FUNCTION */
-#define wait_event_freezekillable_unsafe(wq, condition)			\
+#define wait_event_freezekillable(wq, condition)			\
 ({									\
 	int __retval;							\
 	freezer_do_not_count();						\
 	__retval = wait_event_killable(wq, (condition));		\
-<<<<<<< HEAD
 	freezer_count();						\
 	__retval;							\
 })
@@ -317,9 +297,6 @@ static inline int freezable_schedule_hrtimeout_range(ktime_t *expires,
 	freezer_do_not_count();						\
 	__retval = wait_event_interruptible_exclusive(wq, condition);	\
 	freezer_count();						\
-=======
-	freezer_count_unsafe();						\
->>>>>>> android-4.9
 	__retval;							\
 })
 
@@ -335,7 +312,6 @@ static inline int freeze_kernel_threads(void) { return -ENOSYS; }
 static inline void thaw_processes(void) {}
 static inline void thaw_kernel_threads(void) {}
 
-static inline bool try_to_freeze_nowarn(void) { return false; }
 static inline bool try_to_freeze(void) { return false; }
 
 static inline void freezer_do_not_count(void) {}
@@ -357,27 +333,20 @@ static inline void set_freezable(void) {}
 
 #define freezable_schedule_timeout_killable_unsafe(timeout)		\
 	schedule_timeout_killable(timeout)
-<<<<<<< HEAD
 
 #define freezable_schedule_hrtimeout_range(expires, delta, mode)	\
 	schedule_hrtimeout_range(expires, delta, mode)
 
 #define wait_event_freezable(wq, condition)				\
 		wait_event_interruptible(wq, condition)
-=======
->>>>>>> android-4.9
 
-#define freezable_schedule_hrtimeout_range(expires, delta, mode)	\
-	schedule_hrtimeout_range(expires, delta, mode)
+#define wait_event_freezable_timeout(wq, condition, timeout)		\
+		wait_event_interruptible_timeout(wq, condition, timeout)
 
-<<<<<<< HEAD
 #define wait_event_freezable_exclusive(wq, condition)			\
 		wait_event_interruptible_exclusive(wq, condition)
 
 #define wait_event_freezekillable(wq, condition)		\
-=======
-#define wait_event_freezekillable_unsafe(wq, condition)			\
->>>>>>> android-4.9
 		wait_event_killable(wq, condition)
 
 #define wait_event_freezekillable_unsafe(wq, condition)			\

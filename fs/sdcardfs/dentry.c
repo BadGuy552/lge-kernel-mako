@@ -26,11 +26,7 @@
  *          0: tell VFS to invalidate dentry
  *          1: dentry is valid
  */
-<<<<<<< HEAD
 static int sdcardfs_d_revalidate(struct dentry *dentry, struct nameidata *nd)
-=======
-static int sdcardfs_d_revalidate(struct dentry *dentry, unsigned int flags)
->>>>>>> android-4.9
 {
 	int err = 1;
 	struct path parent_lower_path, lower_path;
@@ -39,11 +35,7 @@ static int sdcardfs_d_revalidate(struct dentry *dentry, unsigned int flags)
 	struct dentry *lower_cur_parent_dentry = NULL;
 	struct dentry *lower_dentry = NULL;
 
-<<<<<<< HEAD
 	if (nd && nd->flags & LOOKUP_RCU)
-=======
-	if (flags & LOOKUP_RCU)
->>>>>>> android-4.9
 		return -ECHILD;
 
 	spin_lock(&dentry->d_lock);
@@ -54,12 +46,7 @@ static int sdcardfs_d_revalidate(struct dentry *dentry, unsigned int flags)
 	spin_unlock(&dentry->d_lock);
 
 	/* check uninitialized obb_dentry and
-<<<<<<< HEAD
 	 * whether the base obbpath has been changed or not */
-=======
-	 * whether the base obbpath has been changed or not
-	 */
->>>>>>> android-4.9
 	if (is_obbpath_invalid(dentry)) {
 		d_drop(dentry);
 		return 0;
@@ -89,7 +76,6 @@ static int sdcardfs_d_revalidate(struct dentry *dentry, unsigned int flags)
 
 	if (dentry < lower_dentry) {
 		spin_lock(&dentry->d_lock);
-<<<<<<< HEAD
 		spin_lock(&lower_dentry->d_lock);
 	} else {
 		spin_lock(&lower_dentry->d_lock);
@@ -101,15 +87,6 @@ static int sdcardfs_d_revalidate(struct dentry *dentry, unsigned int flags)
 		err = 0;
 	} else if (strncasecmp(dentry->d_name.name, lower_dentry->d_name.name,
 				dentry->d_name.len) != 0) {
-=======
-		spin_lock_nested(&lower_dentry->d_lock, DENTRY_D_LOCK_NESTED);
-	} else {
-		spin_lock(&lower_dentry->d_lock);
-		spin_lock_nested(&dentry->d_lock, DENTRY_D_LOCK_NESTED);
-	}
-
-	if (!qstr_case_eq(&dentry->d_name, &lower_dentry->d_name)) {
->>>>>>> android-4.9
 		__d_drop(dentry);
 		err = 0;
 	}
@@ -133,7 +110,6 @@ out:
 static void sdcardfs_d_release(struct dentry *dentry)
 {
 	/* release and reset the lower paths */
-<<<<<<< HEAD
 	if(has_graft_path(dentry)) {
 		sdcardfs_put_reset_orig_path(dentry);
 	}
@@ -144,16 +120,6 @@ static void sdcardfs_d_release(struct dentry *dentry)
 
 static int sdcardfs_hash_ci(const struct dentry *dentry,
 				const struct inode *inode, struct qstr *qstr)
-=======
-	if (has_graft_path(dentry))
-		sdcardfs_put_reset_orig_path(dentry);
-	sdcardfs_put_reset_lower_path(dentry);
-	free_dentry_private_data(dentry);
-}
-
-static int sdcardfs_hash_ci(const struct dentry *dentry,
-				struct qstr *qstr)
->>>>>>> android-4.9
 {
 	/*
 	 * This function is copy of vfat_hashi.
@@ -166,19 +132,12 @@ static int sdcardfs_hash_ci(const struct dentry *dentry,
 	unsigned long hash;
 
 	name = qstr->name;
-<<<<<<< HEAD
 	//len = vfat_striptail_len(qstr);
 	len = qstr->len;
 
 	hash = init_name_hash();
 	while (len--)
 		//hash = partial_name_hash(nls_tolower(t, *name++), hash);
-=======
-	len = qstr->len;
-
-	hash = init_name_hash(dentry);
-	while (len--)
->>>>>>> android-4.9
 		hash = partial_name_hash(tolower(*name++), hash);
 	qstr->hash = end_name_hash(hash);
 
@@ -188,7 +147,6 @@ static int sdcardfs_hash_ci(const struct dentry *dentry,
 /*
  * Case insensitive compare of two vfat names.
  */
-<<<<<<< HEAD
 static int sdcardfs_cmp_ci(const struct dentry *parent,
 		const struct inode *pinode,
 		const struct dentry *dentry, const struct inode *inode,
@@ -210,38 +168,19 @@ static int sdcardfs_cmp_ci(const struct dentry *parent,
 	*/
 	if (name->len == len) {
 		if (strncasecmp(name->name, str, len) == 0)
-=======
-static int sdcardfs_cmp_ci(const struct dentry *dentry,
-		unsigned int len, const char *str, const struct qstr *name)
-{
-	/* FIXME Should we support national language? */
-
-	if (name->len == len) {
-		if (str_n_case_eq(name->name, str, len))
->>>>>>> android-4.9
 			return 0;
 	}
 	return 1;
 }
 
-<<<<<<< HEAD
 static void sdcardfs_canonical_path(const struct path *path, struct path *actual_path) {
-=======
-static void sdcardfs_canonical_path(const struct path *path,
-				struct path *actual_path)
-{
->>>>>>> android-4.9
 	sdcardfs_get_real_lower(path->dentry, actual_path);
 }
 
 const struct dentry_operations sdcardfs_ci_dops = {
 	.d_revalidate	= sdcardfs_d_revalidate,
 	.d_release	= sdcardfs_d_release,
-<<<<<<< HEAD
 	.d_hash 	= sdcardfs_hash_ci,
-=======
-	.d_hash	= sdcardfs_hash_ci,
->>>>>>> android-4.9
 	.d_compare	= sdcardfs_cmp_ci,
 	.d_canonical_path = sdcardfs_canonical_path,
 };

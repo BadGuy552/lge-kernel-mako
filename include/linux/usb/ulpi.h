@@ -12,8 +12,6 @@
 #define __LINUX_USB_ULPI_H
 
 #include <linux/usb/otg.h>
-#include <linux/ulpi/regs.h>
-
 /*-------------------------------------------------------------------------*/
 
 /*
@@ -51,7 +49,6 @@
 
 /*-------------------------------------------------------------------------*/
 
-<<<<<<< HEAD
 /*
  * Macros for Set and Clear
  * See ULPI 1.1 specification to find the registers with Set and Clear offsets
@@ -185,18 +182,8 @@
 
 /*-------------------------------------------------------------------------*/
 
-=======
-#if IS_ENABLED(CONFIG_USB_ULPI)
->>>>>>> android-4.9
 struct usb_phy *otg_ulpi_create(struct usb_phy_io_ops *ops,
 					unsigned int flags);
-#else
-static inline struct usb_phy *otg_ulpi_create(struct usb_phy_io_ops *ops,
-					      unsigned int flags)
-{
-	return NULL;
-}
-#endif
 
 #ifdef CONFIG_USB_ULPI_VIEWPORT
 /* access ops for controllers with a viewport register */

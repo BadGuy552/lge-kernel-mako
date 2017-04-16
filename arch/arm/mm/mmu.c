@@ -16,40 +16,26 @@
 #include <linux/memblock.h>
 #include <linux/fs.h>
 #include <linux/vmalloc.h>
-#include <linux/sizes.h>
 
 #include <asm/cp15.h>
 #include <asm/cputype.h>
 #include <asm/sections.h>
 #include <asm/cachetype.h>
-#include <asm/fixmap.h>
-#include <asm/sections.h>
 #include <asm/setup.h>
+#include <asm/sizes.h>
 #include <asm/smp_plat.h>
 #include <asm/tlb.h>
 #include <asm/highmem.h>
 #include <asm/system_info.h>
 #include <asm/traps.h>
-<<<<<<< HEAD
 #include <asm/mmu_writeable.h>
-=======
-#include <asm/procinfo.h>
-#include <asm/memory.h>
->>>>>>> android-4.9
 
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
-#include <asm/mach/pci.h>
-#include <asm/fixmap.h>
 
-<<<<<<< HEAD
 #include <asm/user_accessible_timer.h>
 
-=======
-#include "fault.h"
->>>>>>> android-4.9
 #include "mm.h"
-#include "tcm.h"
 
 /*
  * empty_zero_page is a special page that is used for
@@ -62,8 +48,6 @@ EXPORT_SYMBOL(empty_zero_page);
  * The pmd table for the upper-most set of pages.
  */
 pmd_t *top_pmd;
-
-pmdval_t user_pmd_table = _PAGE_USER_TABLE;
 
 #define CPOLICY_UNCACHED	0
 #define CPOLICY_BUFFERED	1
@@ -78,9 +62,6 @@ static unsigned int cachepolicy __initdata = CPOLICY_WRITEBACK;
 static unsigned int ecc_mask __initdata = 0;
 pgprot_t pgprot_user;
 pgprot_t pgprot_kernel;
-pgprot_t pgprot_hyp_device;
-pgprot_t pgprot_s2;
-pgprot_t pgprot_s2_device;
 
 EXPORT_SYMBOL(pgprot_user);
 EXPORT_SYMBOL(pgprot_kernel);
@@ -90,14 +71,7 @@ struct cachepolicy {
 	unsigned int	cr_mask;
 	pmdval_t	pmd;
 	pteval_t	pte;
-	pteval_t	pte_s2;
 };
-
-#ifdef CONFIG_ARM_LPAE
-#define s2_policy(policy)	policy
-#else
-#define s2_policy(policy)	0
-#endif
 
 static struct cachepolicy cache_policies[] __initdata = {
 	{
@@ -105,83 +79,51 @@ static struct cachepolicy cache_policies[] __initdata = {
 		.cr_mask	= CR_W|CR_C,
 		.pmd		= PMD_SECT_UNCACHED,
 		.pte		= L_PTE_MT_UNCACHED,
-		.pte_s2		= s2_policy(L_PTE_S2_MT_UNCACHED),
 	}, {
 		.policy		= "buffered",
 		.cr_mask	= CR_C,
 		.pmd		= PMD_SECT_BUFFERED,
 		.pte		= L_PTE_MT_BUFFERABLE,
-		.pte_s2		= s2_policy(L_PTE_S2_MT_UNCACHED),
 	}, {
 		.policy		= "writethrough",
 		.cr_mask	= 0,
 		.pmd		= PMD_SECT_WT,
 		.pte		= L_PTE_MT_WRITETHROUGH,
-		.pte_s2		= s2_policy(L_PTE_S2_MT_WRITETHROUGH),
 	}, {
 		.policy		= "writeback",
 		.cr_mask	= 0,
 		.pmd		= PMD_SECT_WB,
 		.pte		= L_PTE_MT_WRITEBACK,
-		.pte_s2		= s2_policy(L_PTE_S2_MT_WRITEBACK),
 	}, {
 		.policy		= "writealloc",
 		.cr_mask	= 0,
 		.pmd		= PMD_SECT_WBWA,
 		.pte		= L_PTE_MT_WRITEALLOC,
-		.pte_s2		= s2_policy(L_PTE_S2_MT_WRITEBACK),
 	}
 };
 
-#ifdef CONFIG_CPU_CP15
-static unsigned long initial_pmd_value __initdata = 0;
-
 /*
- * Initialise the cache_policy variable with the initial state specified
- * via the "pmd" value.  This is used to ensure that on ARMv6 and later,
- * the C code sets the page tables up with the same policy as the head
- * assembly code, which avoids an illegal state where the TLBs can get
- * confused.  See comments in early_cachepolicy() for more information.
- */
-void __init init_default_cache_policy(unsigned long pmd)
-{
-	int i;
-
-	initial_pmd_value = pmd;
-
-	pmd &= PMD_SECT_CACHE_MASK;
-
-	for (i = 0; i < ARRAY_SIZE(cache_policies); i++)
-		if (cache_policies[i].pmd == pmd) {
-			cachepolicy = i;
-			break;
-		}
-
-	if (i == ARRAY_SIZE(cache_policies))
-		pr_err("ERROR: could not find cache policy\n");
-}
-
-/*
- * These are useful for identifying cache coherency problems by allowing
- * the cache or the cache and writebuffer to be turned off.  (Note: the
- * write buffer should not be on and the cache off).
+ * These are useful for identifying cache coherency
+ * problems by allowing the cache or the cache and
+ * writebuffer to be turned off.  (Note: the write
+ * buffer should not be on and the cache off).
  */
 static int __init early_cachepolicy(char *p)
 {
-	int i, selected = -1;
+	int i;
 
 	for (i = 0; i < ARRAY_SIZE(cache_policies); i++) {
 		int len = strlen(cache_policies[i].policy);
 
 		if (memcmp(p, cache_policies[i].policy, len) == 0) {
-			selected = i;
+			cachepolicy = i;
+			cr_alignment &= ~cache_policies[i].cr_mask;
+			cr_no_alignment &= ~cache_policies[i].cr_mask;
 			break;
 		}
 	}
-
-	if (selected == -1)
-		pr_err("ERROR: unknown or unsupported cache policy\n");
-
+	if (i == ARRAY_SIZE(cache_policies))
+		printk(KERN_ERR "ERROR: unknown or unsupported cache policy\n");
 	/*
 	 * This restriction is partly to do with the way we boot; it is
 	 * unpredictable to have memory mapped using two different sets of
@@ -189,18 +131,12 @@ static int __init early_cachepolicy(char *p)
 	 * change these attributes once the initial assembly has setup the
 	 * page tables.
 	 */
-	if (cpu_architecture() >= CPU_ARCH_ARMv6 && selected != cachepolicy) {
-		pr_warn("Only cachepolicy=%s supported on ARMv6 and later\n",
-			cache_policies[cachepolicy].policy);
-		return 0;
+	if (cpu_architecture() >= CPU_ARCH_ARMv6) {
+		printk(KERN_WARNING "Only cachepolicy=writeback supported on ARMv6 and later\n");
+		cachepolicy = CPOLICY_WRITEBACK;
 	}
-
-	if (selected != cachepolicy) {
-		unsigned long cr = __clear_cr(cache_policies[selected].cr_mask);
-		cachepolicy = selected;
-		flush_cache_all();
-		set_cr(cr);
-	}
+	flush_cache_all();
+	set_cr(cr_alignment);
 	return 0;
 }
 early_param("cachepolicy", early_cachepolicy);
@@ -208,7 +144,7 @@ early_param("cachepolicy", early_cachepolicy);
 static int __init early_nocache(char *__unused)
 {
 	char *p = "buffered";
-	pr_warn("nocache is deprecated; use cachepolicy=%s\n", p);
+	printk(KERN_WARNING "nocache is deprecated; use cachepolicy=%s\n", p);
 	early_cachepolicy(p);
 	return 0;
 }
@@ -217,7 +153,7 @@ early_param("nocache", early_nocache);
 static int __init early_nowrite(char *__unused)
 {
 	char *p = "uncached";
-	pr_warn("nowb is deprecated; use cachepolicy=%s\n", p);
+	printk(KERN_WARNING "nowb is deprecated; use cachepolicy=%s\n", p);
 	early_cachepolicy(p);
 	return 0;
 }
@@ -235,32 +171,41 @@ static int __init early_ecc(char *p)
 early_param("ecc", early_ecc);
 #endif
 
-#else /* ifdef CONFIG_CPU_CP15 */
-
-static int __init early_cachepolicy(char *p)
-{
-	pr_warn("cachepolicy kernel parameter not supported without cp15\n");
-}
-early_param("cachepolicy", early_cachepolicy);
-
 static int __init noalign_setup(char *__unused)
 {
-	pr_warn("noalign kernel parameter not supported without cp15\n");
+	cr_alignment &= ~CR_A;
+	cr_no_alignment &= ~CR_A;
+	set_cr(cr_alignment);
+	return 1;
 }
 __setup("noalign", noalign_setup);
 
-#endif /* ifdef CONFIG_CPU_CP15 / else */
+#ifndef CONFIG_SMP
+void adjust_cr(unsigned long mask, unsigned long set)
+{
+	unsigned long flags;
+
+	mask &= ~CR_A;
+
+	set &= mask;
+
+	local_irq_save(flags);
+
+	cr_no_alignment = (cr_no_alignment & ~mask) | set;
+	cr_alignment = (cr_alignment & ~mask) | set;
+
+	set_cr((get_cr() & ~mask) | set);
+
+	local_irq_restore(flags);
+}
+#endif
 
 #define PROT_PTE_DEVICE		L_PTE_PRESENT|L_PTE_YOUNG|L_PTE_DIRTY|L_PTE_XN
-#define PROT_PTE_S2_DEVICE	PROT_PTE_DEVICE
 #define PROT_SECT_DEVICE	PMD_TYPE_SECT|PMD_SECT_AP_WRITE
 
-static struct mem_type mem_types[] __ro_after_init = {
+static struct mem_type mem_types[] = {
 	[MT_DEVICE] = {		  /* Strongly ordered / ARMv6 shared device */
 		.prot_pte	= PROT_PTE_DEVICE | L_PTE_MT_DEV_SHARED |
-				  L_PTE_SHARED,
-		.prot_pte_s2	= s2_policy(PROT_PTE_S2_DEVICE) |
-				  s2_policy(L_PTE_S2_MT_DEV_SHARED) |
 				  L_PTE_SHARED,
 		.prot_l1	= PMD_TYPE_TABLE,
 		.prot_sect	= PROT_SECT_DEVICE | PMD_SECT_S,
@@ -277,7 +222,7 @@ static struct mem_type mem_types[] __ro_after_init = {
 		.prot_l1	= PMD_TYPE_TABLE,
 		.prot_sect	= PROT_SECT_DEVICE | PMD_SECT_WB,
 		.domain		= DOMAIN_IO,
-	},
+	},	
 	[MT_DEVICE_WC] = {	/* ioremap_wc */
 		.prot_pte	= PROT_PTE_DEVICE | L_PTE_MT_DEV_WC,
 		.prot_l1	= PMD_TYPE_TABLE,
@@ -304,21 +249,20 @@ static struct mem_type mem_types[] __ro_after_init = {
 		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY |
 				L_PTE_RDONLY,
 		.prot_l1   = PMD_TYPE_TABLE,
-		.domain    = DOMAIN_VECTORS,
+		.domain    = DOMAIN_USER,
 	},
 	[MT_HIGH_VECTORS] = {
 		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY |
 				L_PTE_USER | L_PTE_RDONLY,
 		.prot_l1   = PMD_TYPE_TABLE,
-		.domain    = DOMAIN_VECTORS,
+		.domain    = DOMAIN_USER,
 	},
-	[MT_MEMORY_RWX] = {
+	[MT_MEMORY] = {
 		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY,
 		.prot_l1   = PMD_TYPE_TABLE,
 		.prot_sect = PMD_TYPE_SECT | PMD_SECT_AP_WRITE,
 		.domain    = DOMAIN_KERNEL,
 	},
-<<<<<<< HEAD
 	[MT_MEMORY_R] = {
 		.prot_sect = PMD_TYPE_SECT | PMD_SECT_XN,
 		.domain    = DOMAIN_KERNEL,
@@ -329,48 +273,40 @@ static struct mem_type mem_types[] __ro_after_init = {
 	},
 	[MT_MEMORY_RX] = {
 		.prot_sect = PMD_TYPE_SECT,
-=======
-	[MT_MEMORY_RW] = {
-		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY |
-			     L_PTE_XN,
-		.prot_l1   = PMD_TYPE_TABLE,
-		.prot_sect = PMD_TYPE_SECT | PMD_SECT_AP_WRITE,
->>>>>>> android-4.9
 		.domain    = DOMAIN_KERNEL,
 	},
 	[MT_ROM] = {
 		.prot_sect = PMD_TYPE_SECT,
 		.domain    = DOMAIN_KERNEL,
 	},
-	[MT_MEMORY_RWX_NONCACHED] = {
+	[MT_MEMORY_NONCACHED] = {
 		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY |
 				L_PTE_MT_BUFFERABLE,
 		.prot_l1   = PMD_TYPE_TABLE,
 		.prot_sect = PMD_TYPE_SECT | PMD_SECT_AP_WRITE,
 		.domain    = DOMAIN_KERNEL,
 	},
-	[MT_MEMORY_RW_DTCM] = {
+	[MT_MEMORY_DTCM] = {
 		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY |
 				L_PTE_XN,
 		.prot_l1   = PMD_TYPE_TABLE,
 		.prot_sect = PMD_TYPE_SECT | PMD_SECT_XN,
 		.domain    = DOMAIN_KERNEL,
 	},
-	[MT_MEMORY_RWX_ITCM] = {
+	[MT_MEMORY_ITCM] = {
 		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY,
 		.prot_l1   = PMD_TYPE_TABLE,
 		.domain    = DOMAIN_KERNEL,
 	},
-	[MT_MEMORY_RW_SO] = {
+	[MT_MEMORY_SO] = {
 		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY |
-				L_PTE_MT_UNCACHED | L_PTE_XN,
+				L_PTE_MT_UNCACHED,
 		.prot_l1   = PMD_TYPE_TABLE,
 		.prot_sect = PMD_TYPE_SECT | PMD_SECT_AP_WRITE | PMD_SECT_S |
 				PMD_SECT_UNCACHED | PMD_SECT_XN,
 		.domain    = DOMAIN_KERNEL,
 	},
 	[MT_MEMORY_DMA_READY] = {
-<<<<<<< HEAD
 		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY,
 		.prot_l1   = PMD_TYPE_TABLE,
 		.domain    = DOMAIN_KERNEL,
@@ -382,13 +318,6 @@ static struct mem_type mem_types[] __ro_after_init = {
 		.prot_sect = PROT_SECT_DEVICE | PMD_SECT_S,
 		.domain    = DOMAIN_IO,
 	},
-=======
-		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY |
-				L_PTE_XN,
-		.prot_l1   = PMD_TYPE_TABLE,
-		.domain    = DOMAIN_KERNEL,
-	},
->>>>>>> android-4.9
 };
 
 const struct mem_type *get_mem_type(unsigned int type)
@@ -397,7 +326,6 @@ const struct mem_type *get_mem_type(unsigned int type)
 }
 EXPORT_SYMBOL(get_mem_type);
 
-<<<<<<< HEAD
 #define PTE_SET_FN(_name, pteop) \
 static int pte_set_##_name(pte_t *ptep, pgtable_t token, unsigned long addr, \
 			void *data) \
@@ -439,71 +367,6 @@ SET_MEMORY_FN(x, pte_set_x)
 EXPORT_SYMBOL(set_memory_x);
 SET_MEMORY_FN(nx, pte_set_nx)
 EXPORT_SYMBOL(set_memory_nx);
-=======
-static pte_t *(*pte_offset_fixmap)(pmd_t *dir, unsigned long addr);
-
-static pte_t bm_pte[PTRS_PER_PTE + PTE_HWTABLE_PTRS]
-	__aligned(PTE_HWTABLE_OFF + PTE_HWTABLE_SIZE) __initdata;
-
-static pte_t * __init pte_offset_early_fixmap(pmd_t *dir, unsigned long addr)
-{
-	return &bm_pte[pte_index(addr)];
-}
-
-static pte_t *pte_offset_late_fixmap(pmd_t *dir, unsigned long addr)
-{
-	return pte_offset_kernel(dir, addr);
-}
-
-static inline pmd_t * __init fixmap_pmd(unsigned long addr)
-{
-	pgd_t *pgd = pgd_offset_k(addr);
-	pud_t *pud = pud_offset(pgd, addr);
-	pmd_t *pmd = pmd_offset(pud, addr);
-
-	return pmd;
-}
-
-void __init early_fixmap_init(void)
-{
-	pmd_t *pmd;
-
-	/*
-	 * The early fixmap range spans multiple pmds, for which
-	 * we are not prepared:
-	 */
-	BUILD_BUG_ON((__fix_to_virt(__end_of_early_ioremap_region) >> PMD_SHIFT)
-		     != FIXADDR_TOP >> PMD_SHIFT);
-
-	pmd = fixmap_pmd(FIXADDR_TOP);
-	pmd_populate_kernel(&init_mm, pmd, bm_pte);
-
-	pte_offset_fixmap = pte_offset_early_fixmap;
-}
-
-/*
- * To avoid TLB flush broadcasts, this uses local_flush_tlb_kernel_range().
- * As a result, this can only be called with preemption disabled, as under
- * stop_machine().
- */
-void __set_fixmap(enum fixed_addresses idx, phys_addr_t phys, pgprot_t prot)
-{
-	unsigned long vaddr = __fix_to_virt(idx);
-	pte_t *pte = pte_offset_fixmap(pmd_off_k(vaddr), vaddr);
-
-	/* Make sure fixmap region does not exceed available allocation. */
-	BUILD_BUG_ON(FIXADDR_START + (__end_of_fixed_addresses * PAGE_SIZE) >
-		     FIXADDR_END);
-	BUG_ON(idx >= __end_of_fixed_addresses);
-
-	if (pgprot_val(prot))
-		set_pte_at(NULL, vaddr, pte,
-			pfn_pte(phys >> PAGE_SHIFT, prot));
-	else
-		pte_clear(NULL, vaddr, pte);
-	local_flush_tlb_kernel_range(vaddr, vaddr + PAGE_SIZE);
-}
->>>>>>> android-4.9
 
 /*
  * Adjust the PMD section entries according to the CPU in use.
@@ -513,7 +376,6 @@ static void __init build_mem_type_table(void)
 	struct cachepolicy *cp;
 	unsigned int cr = get_cr();
 	pteval_t user_pgprot, kern_pgprot, vecs_pgprot;
-	pteval_t hyp_device_pgprot, s2_pgprot, s2_device_pgprot;
 	int cpu_arch = cpu_architecture();
 	int i;
 
@@ -531,17 +393,8 @@ static void __init build_mem_type_table(void)
 			cachepolicy = CPOLICY_WRITEBACK;
 		ecc_mask = 0;
 	}
-
-	if (is_smp()) {
-		if (cachepolicy != CPOLICY_WRITEALLOC) {
-			pr_warn("Forcing write-allocate cache policy for SMP\n");
-			cachepolicy = CPOLICY_WRITEALLOC;
-		}
-		if (!(initial_pmd_value & PMD_SECT_S)) {
-			pr_warn("Forcing shared mappings for SMP\n");
-			initial_pmd_value |= PMD_SECT_S;
-		}
-	}
+	if (is_smp())
+		cachepolicy = CPOLICY_WRITEALLOC;
 
 	/*
 	 * Strip out features not present on earlier architectures.
@@ -560,7 +413,7 @@ static void __init build_mem_type_table(void)
 	 * "update-able on write" bit on ARM610).  However, Xscale and
 	 * Xscale3 require this bit to be cleared.
 	 */
-	if (cpu_is_xscale_family()) {
+	if (cpu_is_xscale() || cpu_is_xsc3()) {
 		for (i = 0; i < ARRAY_SIZE(mem_types); i++) {
 			mem_types[i].prot_sect &= ~PMD_BIT4;
 			mem_types[i].prot_l1 &= ~PMD_BIT4;
@@ -587,9 +440,6 @@ static void __init build_mem_type_table(void)
 			mem_types[MT_DEVICE_NONSHARED].prot_sect |= PMD_SECT_XN;
 			mem_types[MT_DEVICE_CACHED].prot_sect |= PMD_SECT_XN;
 			mem_types[MT_DEVICE_WC].prot_sect |= PMD_SECT_XN;
-
-			/* Also setup NX memory mapping */
-			mem_types[MT_MEMORY_RW].prot_sect |= PMD_SECT_XN;
 		}
 		if (cpu_arch >= CPU_ARCH_ARMv7 && (cr & CR_TRE)) {
 			/*
@@ -637,38 +487,24 @@ static void __init build_mem_type_table(void)
 	 */
 	cp = &cache_policies[cachepolicy];
 	vecs_pgprot = kern_pgprot = user_pgprot = cp->pte;
-	s2_pgprot = cp->pte_s2;
-	hyp_device_pgprot = mem_types[MT_DEVICE].prot_pte;
-	s2_device_pgprot = mem_types[MT_DEVICE].prot_pte_s2;
-
-#ifndef CONFIG_ARM_LPAE
-	/*
-	 * We don't use domains on ARMv6 (since this causes problems with
-	 * v6/v7 kernels), so we must use a separate memory type for user
-	 * r/o, kernel r/w to map the vectors page.
-	 */
-	if (cpu_arch == CPU_ARCH_ARMv6)
-		vecs_pgprot |= L_PTE_MT_VECTORS;
 
 	/*
-	 * Check is it with support for the PXN bit
-	 * in the Short-descriptor translation table format descriptors.
+	 * Only use write-through for non-SMP systems
 	 */
-<<<<<<< HEAD
+	if (!is_smp() && cpu_arch >= CPU_ARCH_ARMv5 && cachepolicy > CPOLICY_WRITETHROUGH)
+		vecs_pgprot = cache_policies[CPOLICY_WRITETHROUGH].pte;
+
+	/*
+	 * Enable CPU-specific coherency if supported.
+	 * (Only available on XSC3 at the moment.)
+	 */
 	if (arch_is_coherent() && cpu_is_xsc3()) {
 		mem_types[MT_MEMORY].prot_sect |= PMD_SECT_S;
 		mem_types[MT_MEMORY].prot_pte |= L_PTE_SHARED;
 		mem_types[MT_MEMORY_DMA_READY].prot_pte |= L_PTE_SHARED;
 		mem_types[MT_MEMORY_NONCACHED].prot_sect |= PMD_SECT_S;
 		mem_types[MT_MEMORY_NONCACHED].prot_pte |= L_PTE_SHARED;
-=======
-	if (cpu_arch == CPU_ARCH_ARMv7 &&
-		(read_cpuid_ext(CPUID_EXT_MMFR0) & 0xF) >= 4) {
-		user_pmd_table |= PMD_PXNTABLE;
->>>>>>> android-4.9
 	}
-#endif
-
 	/*
 	 * ARMv6 and above have extended page tables.
 	 */
@@ -685,21 +521,18 @@ static void __init build_mem_type_table(void)
 		mem_types[MT_CACHECLEAN].prot_sect |= PMD_SECT_APX|PMD_SECT_AP_WRITE;
 #endif
 
-		/*
-		 * If the initial page tables were created with the S bit
-		 * set, then we need to do the same here for the same
-		 * reasons given in early_cachepolicy().
-		 */
-		if (initial_pmd_value & PMD_SECT_S) {
+		if (is_smp()) {
+			/*
+			 * Mark memory with the "shared" attribute
+			 * for SMP systems
+			 */
 			user_pgprot |= L_PTE_SHARED;
 			kern_pgprot |= L_PTE_SHARED;
 			vecs_pgprot |= L_PTE_SHARED;
-			s2_pgprot |= L_PTE_SHARED;
 			mem_types[MT_DEVICE_WC].prot_sect |= PMD_SECT_S;
 			mem_types[MT_DEVICE_WC].prot_pte |= L_PTE_SHARED;
 			mem_types[MT_DEVICE_CACHED].prot_sect |= PMD_SECT_S;
 			mem_types[MT_DEVICE_CACHED].prot_pte |= L_PTE_SHARED;
-<<<<<<< HEAD
 			mem_types[MT_MEMORY].prot_sect |= PMD_SECT_S;
 			mem_types[MT_MEMORY].prot_pte |= L_PTE_SHARED;
 			mem_types[MT_MEMORY_DMA_READY].prot_pte |= L_PTE_SHARED;
@@ -708,15 +541,6 @@ static void __init build_mem_type_table(void)
 			mem_types[MT_MEMORY_RW].prot_sect |= PMD_SECT_S;
 			mem_types[MT_MEMORY_RX].prot_sect |= PMD_SECT_S;
 			mem_types[MT_MEMORY_NONCACHED].prot_pte |= L_PTE_SHARED;
-=======
-			mem_types[MT_MEMORY_RWX].prot_sect |= PMD_SECT_S;
-			mem_types[MT_MEMORY_RWX].prot_pte |= L_PTE_SHARED;
-			mem_types[MT_MEMORY_RW].prot_sect |= PMD_SECT_S;
-			mem_types[MT_MEMORY_RW].prot_pte |= L_PTE_SHARED;
-			mem_types[MT_MEMORY_DMA_READY].prot_pte |= L_PTE_SHARED;
-			mem_types[MT_MEMORY_RWX_NONCACHED].prot_sect |= PMD_SECT_S;
-			mem_types[MT_MEMORY_RWX_NONCACHED].prot_pte |= L_PTE_SHARED;
->>>>>>> android-4.9
 		}
 	}
 
@@ -727,15 +551,15 @@ static void __init build_mem_type_table(void)
 	if (cpu_arch >= CPU_ARCH_ARMv6) {
 		if (cpu_arch >= CPU_ARCH_ARMv7 && (cr & CR_TRE)) {
 			/* Non-cacheable Normal is XCB = 001 */
-			mem_types[MT_MEMORY_RWX_NONCACHED].prot_sect |=
+			mem_types[MT_MEMORY_NONCACHED].prot_sect |=
 				PMD_SECT_BUFFERED;
 		} else {
 			/* For both ARMv6 and non-TEX-remapping ARMv7 */
-			mem_types[MT_MEMORY_RWX_NONCACHED].prot_sect |=
+			mem_types[MT_MEMORY_NONCACHED].prot_sect |=
 				PMD_SECT_TEX(1);
 		}
 	} else {
-		mem_types[MT_MEMORY_RWX_NONCACHED].prot_sect |= PMD_SECT_BUFFERABLE;
+		mem_types[MT_MEMORY_NONCACHED].prot_sect |= PMD_SECT_BUFFERABLE;
 	}
 
 #ifdef CONFIG_ARM_LPAE
@@ -749,15 +573,10 @@ static void __init build_mem_type_table(void)
 	}
 	kern_pgprot |= PTE_EXT_AF;
 	vecs_pgprot |= PTE_EXT_AF;
-
-	/*
-	 * Set PXN for user mappings
-	 */
-	user_pgprot |= PTE_EXT_PXN;
 #endif
 
 	for (i = 0; i < 16; i++) {
-		pteval_t v = pgprot_val(protection_map[i]);
+		unsigned long v = pgprot_val(protection_map[i]);
 		protection_map[i] = __pgprot(v | user_pgprot);
 	}
 
@@ -767,13 +586,9 @@ static void __init build_mem_type_table(void)
 	pgprot_user   = __pgprot(L_PTE_PRESENT | L_PTE_YOUNG | user_pgprot);
 	pgprot_kernel = __pgprot(L_PTE_PRESENT | L_PTE_YOUNG |
 				 L_PTE_DIRTY | kern_pgprot);
-	pgprot_s2  = __pgprot(L_PTE_PRESENT | L_PTE_YOUNG | s2_pgprot);
-	pgprot_s2_device  = __pgprot(s2_device_pgprot);
-	pgprot_hyp_device  = __pgprot(hyp_device_pgprot);
 
 	mem_types[MT_LOW_VECTORS].prot_l1 |= ecc_mask;
 	mem_types[MT_HIGH_VECTORS].prot_l1 |= ecc_mask;
-<<<<<<< HEAD
 	mem_types[MT_MEMORY].prot_sect |= ecc_mask | cp->pmd;
 	mem_types[MT_MEMORY].prot_pte |= kern_pgprot;
 	mem_types[MT_MEMORY_DMA_READY].prot_pte |= kern_pgprot;
@@ -781,14 +596,6 @@ static void __init build_mem_type_table(void)
 	mem_types[MT_MEMORY_R].prot_sect |= ecc_mask | cp->pmd;
 	mem_types[MT_MEMORY_RW].prot_sect |= ecc_mask | cp->pmd;
 	mem_types[MT_MEMORY_RX].prot_sect |= ecc_mask | cp->pmd;
-=======
-	mem_types[MT_MEMORY_RWX].prot_sect |= ecc_mask | cp->pmd;
-	mem_types[MT_MEMORY_RWX].prot_pte |= kern_pgprot;
-	mem_types[MT_MEMORY_RW].prot_sect |= ecc_mask | cp->pmd;
-	mem_types[MT_MEMORY_RW].prot_pte |= kern_pgprot;
-	mem_types[MT_MEMORY_DMA_READY].prot_pte |= kern_pgprot;
-	mem_types[MT_MEMORY_RWX_NONCACHED].prot_sect |= ecc_mask;
->>>>>>> android-4.9
 	mem_types[MT_ROM].prot_sect |= cp->pmd;
 
 	switch (cp->pmd) {
@@ -800,8 +607,8 @@ static void __init build_mem_type_table(void)
 		mem_types[MT_CACHECLEAN].prot_sect |= PMD_SECT_WB;
 		break;
 	}
-	pr_info("Memory policy: %sData cache %s\n",
-		ecc_mask ? "ECC enabled, " : "", cp->policy);
+	printk("Memory policy: ECC %sabled, Data cache %s\n",
+		ecc_mask ? "en" : "dis", cp->policy);
 
 	for (i = 0; i < ARRAY_SIZE(mem_types); i++) {
 		struct mem_type *t = &mem_types[i];
@@ -839,60 +646,31 @@ static void __init *early_alloc(unsigned long sz)
 	return early_alloc_aligned(sz, sz);
 }
 
-static void *__init late_alloc(unsigned long sz)
-{
-	void *ptr = (void *)__get_free_pages(PGALLOC_GFP, get_order(sz));
-
-	if (!ptr || !pgtable_page_ctor(virt_to_page(ptr)))
-		BUG();
-	return ptr;
-}
-
-static pte_t * __init arm_pte_alloc(pmd_t *pmd, unsigned long addr,
-				unsigned long prot,
-				void *(*alloc)(unsigned long sz))
+static pte_t * __init early_pte_alloc(pmd_t *pmd, unsigned long addr, unsigned long prot)
 {
 	if (pmd_none(*pmd)) {
-		pte_t *pte = alloc(PTE_HWTABLE_OFF + PTE_HWTABLE_SIZE);
+		pte_t *pte = early_alloc(PTE_HWTABLE_OFF + PTE_HWTABLE_SIZE);
 		__pmd_populate(pmd, __pa(pte), prot);
 	}
 	BUG_ON(pmd_bad(*pmd));
 	return pte_offset_kernel(pmd, addr);
 }
 
-static pte_t * __init early_pte_alloc(pmd_t *pmd, unsigned long addr,
-				      unsigned long prot)
-{
-	return arm_pte_alloc(pmd, addr, prot, early_alloc);
-}
-
 static void __init alloc_init_pte(pmd_t *pmd, unsigned long addr,
 				  unsigned long end, unsigned long pfn,
-				  const struct mem_type *type,
-				  void *(*alloc)(unsigned long sz),
-				  bool ng)
+				  const struct mem_type *type)
 {
-	pte_t *pte = arm_pte_alloc(pmd, addr, type->prot_l1, alloc);
+	pte_t *pte = early_pte_alloc(pmd, addr, type->prot_l1);
 	do {
-		set_pte_ext(pte, pfn_pte(pfn, __pgprot(type->prot_pte)),
-			    ng ? PTE_EXT_NG : 0);
+		set_pte_ext(pte, pfn_pte(pfn, __pgprot(type->prot_pte)), 0);
 		pfn++;
 	} while (pte++, addr += PAGE_SIZE, addr != end);
 }
 
-<<<<<<< HEAD
 static void __init map_init_section(pmd_t *pmd, unsigned long addr,
 			unsigned long end, phys_addr_t phys,
 			const struct mem_type *type)
 {
-=======
-static void __init __map_init_section(pmd_t *pmd, unsigned long addr,
-			unsigned long end, phys_addr_t phys,
-			const struct mem_type *type, bool ng)
-{
-	pmd_t *p = pmd;
-
->>>>>>> android-4.9
 #ifndef CONFIG_ARM_LPAE
 	/*
 	 * In classic MMU format, puds and pmds are folded in to
@@ -907,29 +685,16 @@ static void __init __map_init_section(pmd_t *pmd, unsigned long addr,
 		pmd++;
 #endif
 	do {
-<<<<<<< HEAD
 		*pmd = __pmd(phys | type->prot_sect);
 		phys += SECTION_SIZE;
 	} while (pmd++, addr += SECTION_SIZE, addr != end);
 
 	flush_pmd_entry(pmd);
-=======
-		*pmd = __pmd(phys | type->prot_sect | (ng ? PMD_SECT_nG : 0));
-		phys += SECTION_SIZE;
-	} while (pmd++, addr += SECTION_SIZE, addr != end);
-
-	flush_pmd_entry(p);
->>>>>>> android-4.9
 }
 
 static void __init alloc_init_pmd(pud_t *pud, unsigned long addr,
 				      unsigned long end, phys_addr_t phys,
-<<<<<<< HEAD
 				      const struct mem_type *type)
-=======
-				      const struct mem_type *type,
-				      void *(*alloc)(unsigned long sz), bool ng)
->>>>>>> android-4.9
 {
 	pmd_t *pmd = pmd_offset(pud, addr);
 	unsigned long next;
@@ -947,17 +712,10 @@ static void __init alloc_init_pmd(pud_t *pud, unsigned long addr,
 		 */
 		if (type->prot_sect &&
 				((addr | next | phys) & ~SECTION_MASK) == 0) {
-<<<<<<< HEAD
 			map_init_section(pmd, addr, next, phys, type);
 		} else {
 			alloc_init_pte(pmd, addr, next,
 						__phys_to_pfn(phys), type);
-=======
-			__map_init_section(pmd, addr, next, phys, type, ng);
-		} else {
-			alloc_init_pte(pmd, addr, next,
-				       __phys_to_pfn(phys), type, alloc, ng);
->>>>>>> android-4.9
 		}
 
 		phys += next - addr;
@@ -966,29 +724,21 @@ static void __init alloc_init_pmd(pud_t *pud, unsigned long addr,
 }
 
 static void __init alloc_init_pud(pgd_t *pgd, unsigned long addr,
-				  unsigned long end, phys_addr_t phys,
-				  const struct mem_type *type,
-				  void *(*alloc)(unsigned long sz), bool ng)
+	unsigned long end, unsigned long phys, const struct mem_type *type)
 {
 	pud_t *pud = pud_offset(pgd, addr);
 	unsigned long next;
 
 	do {
 		next = pud_addr_end(addr, end);
-<<<<<<< HEAD
 		alloc_init_pmd(pud, addr, next, phys, type);
-=======
-		alloc_init_pmd(pud, addr, next, phys, type, alloc, ng);
->>>>>>> android-4.9
 		phys += next - addr;
 	} while (pud++, addr = next, addr != end);
 }
 
 #ifndef CONFIG_ARM_LPAE
-static void __init create_36bit_mapping(struct mm_struct *mm,
-					struct map_desc *md,
-					const struct mem_type *type,
-					bool ng)
+static void __init create_36bit_mapping(struct map_desc *md,
+					const struct mem_type *type)
 {
 	unsigned long addr, length, end;
 	phys_addr_t phys;
@@ -999,7 +749,8 @@ static void __init create_36bit_mapping(struct mm_struct *mm,
 	length = PAGE_ALIGN(md->length);
 
 	if (!(cpu_architecture() >= CPU_ARCH_ARMv6 || cpu_is_xsc3())) {
-		pr_err("MM: CPU does not support supersection mapping for 0x%08llx at 0x%08lx\n",
+		printk(KERN_ERR "MM: CPU does not support supersection "
+		       "mapping for 0x%08llx at 0x%08lx\n",
 		       (long long)__pfn_to_phys((u64)md->pfn), addr);
 		return;
 	}
@@ -1011,13 +762,15 @@ static void __init create_36bit_mapping(struct mm_struct *mm,
 	 *	of the actual domain assignments in use.
 	 */
 	if (type->domain) {
-		pr_err("MM: invalid domain in supersection mapping for 0x%08llx at 0x%08lx\n",
+		printk(KERN_ERR "MM: invalid domain in supersection "
+		       "mapping for 0x%08llx at 0x%08lx\n",
 		       (long long)__pfn_to_phys((u64)md->pfn), addr);
 		return;
 	}
 
 	if ((addr | length | __pfn_to_phys(md->pfn)) & ~SUPERSECTION_MASK) {
-		pr_err("MM: cannot create mapping for 0x%08llx at 0x%08lx invalid alignment\n",
+		printk(KERN_ERR "MM: cannot create mapping for 0x%08llx"
+		       " at 0x%08lx invalid alignment\n",
 		       (long long)__pfn_to_phys((u64)md->pfn), addr);
 		return;
 	}
@@ -1028,7 +781,7 @@ static void __init create_36bit_mapping(struct mm_struct *mm,
 	 */
 	phys |= (((md->pfn >> (32 - PAGE_SHIFT)) & 0xF) << 20);
 
-	pgd = pgd_offset(mm, addr);
+	pgd = pgd_offset_k(addr);
 	end = addr + length;
 	do {
 		pud_t *pud = pud_offset(pgd, addr);
@@ -1036,8 +789,7 @@ static void __init create_36bit_mapping(struct mm_struct *mm,
 		int i;
 
 		for (i = 0; i < 16; i++)
-			*pmd++ = __pmd(phys | type->prot_sect | PMD_SECT_SUPER |
-				       (ng ? PMD_SECT_nG : 0));
+			*pmd++ = __pmd(phys | type->prot_sect | PMD_SECT_SUPER);
 
 		addr += SUPERSECTION_SIZE;
 		phys += SUPERSECTION_SIZE;
@@ -1046,16 +798,20 @@ static void __init create_36bit_mapping(struct mm_struct *mm,
 }
 #endif	/* !CONFIG_ARM_LPAE */
 
-static void __init __create_mapping(struct mm_struct *mm, struct map_desc *md,
-				    void *(*alloc)(unsigned long sz),
-				    bool ng)
+/*
+ * Create the page directory entries and any necessary
+ * page tables for the mapping specified by `md'.  We
+ * are able to cope here with varying sizes and address
+ * offsets, and we take full advantage of sections and
+ * supersections.
+ */
+static void __init create_mapping(struct map_desc *md)
 {
 	unsigned long addr, length, end;
 	phys_addr_t phys;
 	const struct mem_type *type;
 	pgd_t *pgd;
 
-<<<<<<< HEAD
 	if ((md->virtual != vectors_base() &&
 		md->virtual != get_user_accessible_timers_base()) &&
 			md->virtual < TASK_SIZE) {
@@ -1073,8 +829,6 @@ static void __init __create_mapping(struct mm_struct *mm, struct map_desc *md,
 		       (long long)__pfn_to_phys((u64)md->pfn), md->virtual);
 	}
 
-=======
->>>>>>> android-4.9
 	type = &mem_types[md->type];
 
 #ifndef CONFIG_ARM_LPAE
@@ -1082,7 +836,7 @@ static void __init __create_mapping(struct mm_struct *mm, struct map_desc *md,
 	 * Catch 36-bit addresses
 	 */
 	if (md->pfn >= 0x100000) {
-		create_36bit_mapping(mm, md, type, ng);
+		create_36bit_mapping(md, type);
 		return;
 	}
 #endif
@@ -1092,58 +846,22 @@ static void __init __create_mapping(struct mm_struct *mm, struct map_desc *md,
 	length = PAGE_ALIGN(md->length + (md->virtual & ~PAGE_MASK));
 
 	if (type->prot_l1 == 0 && ((addr | phys | length) & ~SECTION_MASK)) {
-		pr_warn("BUG: map for 0x%08llx at 0x%08lx can not be mapped using pages, ignoring.\n",
-			(long long)__pfn_to_phys(md->pfn), addr);
+		printk(KERN_WARNING "BUG: map for 0x%08llx at 0x%08lx can not "
+		       "be mapped using pages, ignoring.\n",
+		       (long long)__pfn_to_phys(md->pfn), addr);
 		return;
 	}
 
-	pgd = pgd_offset(mm, addr);
+	pgd = pgd_offset_k(addr);
 	end = addr + length;
 	do {
 		unsigned long next = pgd_addr_end(addr, end);
 
-		alloc_init_pud(pgd, addr, next, phys, type, alloc, ng);
+		alloc_init_pud(pgd, addr, next, phys, type);
 
 		phys += next - addr;
 		addr = next;
 	} while (pgd++, addr != end);
-}
-
-/*
- * Create the page directory entries and any necessary
- * page tables for the mapping specified by `md'.  We
- * are able to cope here with varying sizes and address
- * offsets, and we take full advantage of sections and
- * supersections.
- */
-static void __init create_mapping(struct map_desc *md)
-{
-	if (md->virtual != vectors_base() && md->virtual < TASK_SIZE) {
-		pr_warn("BUG: not creating mapping for 0x%08llx at 0x%08lx in user region\n",
-			(long long)__pfn_to_phys((u64)md->pfn), md->virtual);
-		return;
-	}
-
-	if ((md->type == MT_DEVICE || md->type == MT_ROM) &&
-	    md->virtual >= PAGE_OFFSET && md->virtual < FIXADDR_START &&
-	    (md->virtual < VMALLOC_START || md->virtual >= VMALLOC_END)) {
-		pr_warn("BUG: mapping for 0x%08llx at 0x%08lx out of vmalloc space\n",
-			(long long)__pfn_to_phys((u64)md->pfn), md->virtual);
-	}
-
-	__create_mapping(&init_mm, md, early_alloc, false);
-}
-
-void __init create_mapping_late(struct mm_struct *mm, struct map_desc *md,
-				bool ng)
-{
-#ifdef CONFIG_ARM_LPAE
-	pud_t *pud = pud_alloc(mm, pgd_offset(mm, md->virtual), md->virtual);
-	if (WARN_ON(!pud))
-		return;
-	pmd_alloc(mm, pud, 0);
-#endif
-	__create_mapping(mm, md, late_alloc, ng);
 }
 
 /*
@@ -1153,56 +871,27 @@ void __init iotable_init(struct map_desc *io_desc, int nr)
 {
 	struct map_desc *md;
 	struct vm_struct *vm;
-<<<<<<< HEAD
 	int rc = 0;
-=======
-	struct static_vm *svm;
->>>>>>> android-4.9
 
 	if (!nr)
 		return;
 
-	svm = early_alloc_aligned(sizeof(*svm) * nr, __alignof__(*svm));
+	vm = early_alloc_aligned(sizeof(*vm) * nr, __alignof__(*vm));
 
 	for (md = io_desc; nr; md++, nr--) {
 		create_mapping(md);
-
-		vm = &svm->vm;
 		vm->addr = (void *)(md->virtual & PAGE_MASK);
 		vm->size = PAGE_ALIGN(md->length + (md->virtual & ~PAGE_MASK));
 		vm->phys_addr = __pfn_to_phys(md->pfn);
 		vm->flags = VM_IOREMAP | VM_ARM_STATIC_MAPPING;
 		vm->flags |= VM_ARM_MTYPE(md->type);
 		vm->caller = iotable_init;
-<<<<<<< HEAD
 		rc = vm_area_check_early(vm);
 		if (!rc)
 			vm_area_add_early(vm++);
 	}
 }
 
-=======
-		add_static_vm_early(svm++);
-	}
-}
-
-void __init vm_reserve_area_early(unsigned long addr, unsigned long size,
-				  void *caller)
-{
-	struct vm_struct *vm;
-	struct static_vm *svm;
-
-	svm = early_alloc_aligned(sizeof(*svm), __alignof__(*svm));
-
-	vm = &svm->vm;
-	vm->addr = (void *)addr;
-	vm->size = size;
-	vm->flags = VM_IOREMAP | VM_ARM_EMPTY_MAPPING;
-	vm->caller = caller;
-	add_static_vm_early(svm);
-}
-
->>>>>>> android-4.9
 #ifndef CONFIG_ARM_LPAE
 
 /*
@@ -1220,7 +909,6 @@ void __init vm_reserve_area_early(unsigned long addr, unsigned long size,
 
 static void __init pmd_empty_section_gap(unsigned long addr)
 {
-<<<<<<< HEAD
 	struct vm_struct *vm;
 
 	vm = early_alloc_aligned(sizeof(*vm), __alignof__(*vm));
@@ -1229,30 +917,18 @@ static void __init pmd_empty_section_gap(unsigned long addr)
 	vm->flags = VM_IOREMAP | VM_ARM_EMPTY_MAPPING;
 	vm->caller = pmd_empty_section_gap;
 	vm_area_add_early(vm);
-=======
-	vm_reserve_area_early(addr, SECTION_SIZE, pmd_empty_section_gap);
->>>>>>> android-4.9
 }
 
 static void __init fill_pmd_gaps(void)
 {
-<<<<<<< HEAD
-=======
-	struct static_vm *svm;
->>>>>>> android-4.9
 	struct vm_struct *vm;
 	unsigned long addr, next = 0;
 	pmd_t *pmd;
 
-<<<<<<< HEAD
 	/* we're still single threaded hence no lock needed here */
 	for (vm = vmlist; vm; vm = vm->next) {
 		if (!(vm->flags & (VM_ARM_STATIC_MAPPING | VM_ARM_EMPTY_MAPPING)))
 			continue;
-=======
-	list_for_each_entry(svm, &static_vmlist, list) {
-		vm = &svm->vm;
->>>>>>> android-4.9
 		addr = (unsigned long)vm->addr;
 		if (addr < next)
 			continue;
@@ -1289,40 +965,6 @@ static void __init fill_pmd_gaps(void)
 #define fill_pmd_gaps() do { } while (0)
 #endif
 
-<<<<<<< HEAD
-=======
-#if defined(CONFIG_PCI) && !defined(CONFIG_NEED_MACH_IO_H)
-static void __init pci_reserve_io(void)
-{
-	struct static_vm *svm;
-
-	svm = find_static_vm_vaddr((void *)PCI_IO_VIRT_BASE);
-	if (svm)
-		return;
-
-	vm_reserve_area_early(PCI_IO_VIRT_BASE, SZ_2M, pci_reserve_io);
-}
-#else
-#define pci_reserve_io() do { } while (0)
-#endif
-
-#ifdef CONFIG_DEBUG_LL
-void __init debug_ll_io_init(void)
-{
-	struct map_desc map;
-
-	debug_ll_addr(&map.pfn, &map.virtual);
-	if (!map.pfn || !map.virtual)
-		return;
-	map.pfn = __phys_to_pfn(map.pfn);
-	map.virtual &= PAGE_MASK;
-	map.length = PAGE_SIZE;
-	map.type = MT_DEVICE;
-	iotable_init(&map, 1);
-}
-#endif
-
->>>>>>> android-4.9
 static void * __initdata vmalloc_min =
 	(void *)(VMALLOC_END - (240 << 20) - VMALLOC_OFFSET);
 
@@ -1337,13 +979,15 @@ static int __init early_vmalloc(char *arg)
 
 	if (vmalloc_reserve < SZ_16M) {
 		vmalloc_reserve = SZ_16M;
-		pr_warn("vmalloc area too small, limiting to %luMB\n",
+		printk(KERN_WARNING
+			"vmalloc area too small, limiting to %luMB\n",
 			vmalloc_reserve >> 20);
 	}
 
 	if (vmalloc_reserve > VMALLOC_END - (PAGE_OFFSET + SZ_32M)) {
 		vmalloc_reserve = VMALLOC_END - (PAGE_OFFSET + SZ_32M);
-		pr_warn("vmalloc area is too big, limiting to %luMB\n",
+		printk(KERN_WARNING
+			"vmalloc area is too big, limiting to %luMB\n",
 			vmalloc_reserve >> 20);
 	}
 
@@ -1356,13 +1000,8 @@ phys_addr_t arm_lowmem_limit __initdata = 0;
 
 void __init sanity_check_meminfo(void)
 {
-	phys_addr_t memblock_limit = 0;
-	int highmem = 0;
-	u64 vmalloc_limit;
-	struct memblock_region *reg;
-	bool should_use_highmem = false;
+	int i, j, highmem = 0;
 
-<<<<<<< HEAD
 #ifdef CONFIG_ENABLE_VMALLOC_SAVING
 	unsigned long hole_start;
 	for (i = 0; i < (meminfo.nr_banks - 1); i++) {
@@ -1382,110 +1021,108 @@ void __init sanity_check_meminfo(void)
 	for (i = 0, j = 0; i < meminfo.nr_banks; i++) {
 		struct membank *bank = &meminfo.bank[j];
 		*bank = meminfo.bank[i];
-=======
-	/*
-	 * Let's use our own (unoptimized) equivalent of __pa() that is
-	 * not affected by wrap-arounds when sizeof(phys_addr_t) == 4.
-	 * The result is used as the upper bound on physical memory address
-	 * and may itself be outside the valid range for which phys_addr_t
-	 * and therefore __pa() is defined.
-	 */
-	vmalloc_limit = (u64)(uintptr_t)vmalloc_min - PAGE_OFFSET + PHYS_OFFSET;
->>>>>>> android-4.9
 
-	for_each_memblock(memory, reg) {
-		phys_addr_t block_start = reg->base;
-		phys_addr_t block_end = reg->base + reg->size;
-		phys_addr_t size_limit = reg->size;
-
-		if (reg->base >= vmalloc_limit)
+		if (bank->start > ULONG_MAX)
 			highmem = 1;
-		else
-			size_limit = vmalloc_limit - reg->base;
 
+#ifdef CONFIG_HIGHMEM
+		if (__va(bank->start) >= vmalloc_min ||
+		    __va(bank->start) < (void *)PAGE_OFFSET)
+			highmem = 1;
 
-		if (!IS_ENABLED(CONFIG_HIGHMEM) || cache_is_vipt_aliasing()) {
+		bank->highmem = highmem;
 
-			if (highmem) {
-				pr_notice("Ignoring RAM at %pa-%pa (!CONFIG_HIGHMEM)\n",
-					  &block_start, &block_end);
-				memblock_remove(reg->base, reg->size);
-				should_use_highmem = true;
-				continue;
+		/*
+		 * Split those memory banks which are partially overlapping
+		 * the vmalloc area greatly simplifying things later.
+		 */
+		if (!highmem && __va(bank->start) < vmalloc_min &&
+		    bank->size > vmalloc_min - __va(bank->start)) {
+			if (meminfo.nr_banks >= NR_BANKS) {
+				printk(KERN_CRIT "NR_BANKS too low, "
+						 "ignoring high memory\n");
+			} else {
+				memmove(bank + 1, bank,
+					(meminfo.nr_banks - i) * sizeof(*bank));
+				meminfo.nr_banks++;
+				i++;
+				bank[1].size -= vmalloc_min - __va(bank->start);
+				bank[1].start = __pa(vmalloc_min - 1) + 1;
+				bank[1].highmem = highmem = 1;
+				j++;
 			}
-
-			if (reg->size > size_limit) {
-				phys_addr_t overlap_size = reg->size - size_limit;
-
-				pr_notice("Truncating RAM at %pa-%pa",
-					  &block_start, &block_end);
-				block_end = vmalloc_limit;
-				pr_cont(" to -%pa", &block_end);
-				memblock_remove(vmalloc_limit, overlap_size);
-				should_use_highmem = true;
-			}
+			bank->size = vmalloc_min - __va(bank->start);
 		}
-<<<<<<< HEAD
+#else
+		bank->highmem = highmem;
+
+		/*
+		 * Highmem banks not allowed with !CONFIG_HIGHMEM.
+		 */
+		if (highmem) {
+			printk(KERN_NOTICE "Ignoring RAM at %.8llx-%.8llx "
+			       "(!CONFIG_HIGHMEM).\n",
+			       (unsigned long long)bank->start,
+			       (unsigned long long)bank->start + bank->size - 1);
+			continue;
+		}
+
+		/*
+		 * Check whether this memory bank would entirely overlap
+		 * the vmalloc area.
+		 */
+		if (__va(bank->start) >= vmalloc_min ||
+		    __va(bank->start) < (void *)PAGE_OFFSET) {
+			printk(KERN_NOTICE "Ignoring RAM at %.8llx-%.8llx "
+			       "(vmalloc region overlap).\n",
+			       (unsigned long long)bank->start,
+			       (unsigned long long)bank->start + bank->size - 1);
+			continue;
+		}
+
+		/*
+		 * Check whether this memory bank would partially overlap
+		 * the vmalloc area.
+		 */
+		if (__va(bank->start + bank->size) > vmalloc_min ||
+		    __va(bank->start + bank->size) < __va(bank->start)) {
+			unsigned long newsize = vmalloc_min - __va(bank->start);
+			printk(KERN_NOTICE "Truncating RAM at %.8llx-%.8llx "
+			       "to -%.8llx (vmalloc region overlap).\n",
+			       (unsigned long long)bank->start,
+			       (unsigned long long)bank->start + bank->size - 1,
+			       (unsigned long long)bank->start + newsize - 1);
+			bank->size = newsize;
+		}
 #endif
 		if (!bank->highmem && bank->start + bank->size > arm_lowmem_limit)
 			arm_lowmem_limit = bank->start + bank->size;
-=======
->>>>>>> android-4.9
 
-		if (!highmem) {
-			if (block_end > arm_lowmem_limit) {
-				if (reg->size > size_limit)
-					arm_lowmem_limit = vmalloc_limit;
-				else
-					arm_lowmem_limit = block_end;
-			}
+		j++;
+	}
+#ifdef CONFIG_HIGHMEM
+	if (highmem) {
+		const char *reason = NULL;
 
+		if (cache_is_vipt_aliasing()) {
 			/*
-			 * Find the first non-pmd-aligned page, and point
-			 * memblock_limit at it. This relies on rounding the
-			 * limit down to be pmd-aligned, which happens at the
-			 * end of this function.
-			 *
-			 * With this algorithm, the start or end of almost any
-			 * bank can be non-pmd-aligned. The only exception is
-			 * that the start of the bank 0 must be section-
-			 * aligned, since otherwise memory would need to be
-			 * allocated when mapping the start of bank 0, which
-			 * occurs before any free memory is mapped.
+			 * Interactions between kmap and other mappings
+			 * make highmem support with aliasing VIPT caches
+			 * rather difficult.
 			 */
-			if (!memblock_limit) {
-				if (!IS_ALIGNED(block_start, PMD_SIZE))
-					memblock_limit = block_start;
-				else if (!IS_ALIGNED(block_end, PMD_SIZE))
-					memblock_limit = arm_lowmem_limit;
-			}
-
+			reason = "with VIPT aliasing cache";
+		}
+		if (reason) {
+			printk(KERN_CRIT "HIGHMEM is not supported %s, ignoring high memory\n",
+				reason);
+			while (j > 0 && meminfo.bank[j - 1].highmem)
+				j--;
 		}
 	}
-<<<<<<< HEAD
 #endif
 	meminfo.nr_banks = j;
 	high_memory = __va(arm_lowmem_limit - 1) + 1;
 	memblock_set_current_limit(arm_lowmem_limit);
-=======
-
-	if (should_use_highmem)
-		pr_notice("Consider using a HIGHMEM enabled kernel.\n");
-
-	high_memory = __va(arm_lowmem_limit - 1) + 1;
-
-	/*
-	 * Round the memblock limit down to a pmd size.  This
-	 * helps to ensure that we will allocate memory from the
-	 * last full pmd, which should be mapped.
-	 */
-	if (memblock_limit)
-		memblock_limit = round_down(memblock_limit, PMD_SIZE);
-	if (!memblock_limit)
-		memblock_limit = arm_lowmem_limit;
-
-	memblock_set_current_limit(memblock_limit);
->>>>>>> android-4.9
 }
 
 static inline void prepare_page_table(void)
@@ -1501,7 +1138,7 @@ static inline void prepare_page_table(void)
 
 #ifdef CONFIG_XIP_KERNEL
 	/* The XIP kernel is mapped in the module area -- skip over it */
-	addr = ((unsigned long)_exiprom + PMD_SIZE - 1) & PMD_MASK;
+	addr = ((unsigned long)_etext + PMD_SIZE - 1) & PMD_MASK;
 #endif
 	for ( ; addr < PAGE_OFFSET; addr += PMD_SIZE)
 		pmd_clear(pmd_off_k(addr));
@@ -1552,12 +1189,12 @@ void __init arm_mm_memblock_reserve(void)
 
 /*
  * Set up the device mappings.  Since we clear out the page tables for all
- * mappings above VMALLOC_START, except early fixmap, we might remove debug
- * device mappings.  This means earlycon can be used to debug this function
- * Any other function or debugging method which may touch any device _will_
- * crash the kernel.
+ * mappings above VMALLOC_START, we will remove any debug device mappings.
+ * This means you have to be careful how you debug this function, or any
+ * called function.  This means you can't use any function or debugging
+ * method which may touch any device, otherwise the kernel _will_ crash.
  */
-static void __init devicemaps_init(const struct machine_desc *mdesc)
+static void __init devicemaps_init(struct machine_desc *mdesc)
 {
 	struct map_desc map;
 	unsigned long addr;
@@ -1570,10 +1207,7 @@ static void __init devicemaps_init(const struct machine_desc *mdesc)
 
 	early_trap_init(vectors);
 
-	/*
-	 * Clear page table except top pmd used by early fixmaps
-	 */
-	for (addr = VMALLOC_START; addr < (FIXADDR_TOP & PMD_MASK); addr += PMD_SIZE)
+	for (addr = VMALLOC_START; addr; addr += PMD_SIZE)
 		pmd_clear(pmd_off_k(addr));
 
 	/*
@@ -1583,7 +1217,7 @@ static void __init devicemaps_init(const struct machine_desc *mdesc)
 #ifdef CONFIG_XIP_KERNEL
 	map.pfn = __phys_to_pfn(CONFIG_XIP_PHYS_ADDR & SECTION_MASK);
 	map.virtual = MODULES_VADDR;
-	map.length = ((unsigned long)_exiprom - map.virtual + ~SECTION_MASK) & SECTION_MASK;
+	map.length = ((unsigned long)_etext - map.virtual + ~SECTION_MASK) & SECTION_MASK;
 	map.type = MT_ROM;
 	create_mapping(&map);
 #endif
@@ -1640,7 +1274,6 @@ static void __init devicemaps_init(const struct machine_desc *mdesc)
 	 */
 	if (mdesc->map_io)
 		mdesc->map_io();
-<<<<<<< HEAD
 	fill_pmd_gaps();
 
 	if (use_user_accessible_timers()) {
@@ -1656,14 +1289,6 @@ static void __init devicemaps_init(const struct machine_desc *mdesc)
 			create_mapping(&map);
 		}
 	}
-=======
-	else
-		debug_ll_io_init();
-	fill_pmd_gaps();
-
-	/* Reserve fixed i/o space in VMALLOC region */
-	pci_reserve_io();
->>>>>>> android-4.9
 
 	/*
 	 * Finally flush the caches and tlb to ensure that we're in a
@@ -1673,9 +1298,6 @@ static void __init devicemaps_init(const struct machine_desc *mdesc)
 	 */
 	local_flush_tlb_all();
 	flush_cache_all();
-
-	/* Enable asynchronous aborts */
-	early_abt_enable();
 }
 
 static void __init kmap_init(void)
@@ -1684,9 +1306,6 @@ static void __init kmap_init(void)
 	pkmap_page_table = early_pte_alloc(pmd_off_k(PKMAP_BASE),
 		PKMAP_BASE, _PAGE_KERNEL_TABLE);
 #endif
-
-	early_pte_alloc(pmd_off_k(FIXADDR_START), FIXADDR_START,
-			_PAGE_KERNEL_TABLE);
 }
 
 #ifdef CONFIG_STRICT_MEMORY_RWX
@@ -1790,7 +1409,6 @@ EXPORT_SYMBOL(mem_text_write_kernel_word);
 static void __init map_lowmem(void)
 {
 	struct memblock_region *reg;
-<<<<<<< HEAD
 	struct vm_struct *vm;
 	phys_addr_t start;
 	phys_addr_t end;
@@ -1799,14 +1417,6 @@ static void __init map_lowmem(void)
 	unsigned long length;
 	unsigned int type;
 	int nr = 0;
-=======
-#ifdef CONFIG_XIP_KERNEL
-	phys_addr_t kernel_x_start = round_down(__pa(_sdata), SECTION_SIZE);
-#else
-	phys_addr_t kernel_x_start = round_down(__pa(_stext), SECTION_SIZE);
-#endif
-	phys_addr_t kernel_x_end = round_up(__pa(__init_end), SECTION_SIZE);
->>>>>>> android-4.9
 
 	/* Map all the lowmem memory banks. */
 	for_each_memblock(memory, reg) {
@@ -1815,18 +1425,11 @@ static void __init map_lowmem(void)
 		start = reg->base;
 		end = start + reg->size;
 
-<<<<<<< HEAD
-=======
-		if (memblock_is_nomap(reg))
-			continue;
-
->>>>>>> android-4.9
 		if (end > arm_lowmem_limit)
 			end = arm_lowmem_limit;
 		if (start >= end)
 			break;
 
-<<<<<<< HEAD
 		map.pfn = __phys_to_pfn(start);
 		map.virtual = __phys_to_virt(start);
 #ifdef CONFIG_STRICT_MEMORY_RWX
@@ -1870,172 +1473,6 @@ static void __init map_lowmem(void)
 		map.length = end - start;
 		map.type = MT_MEMORY;
 #endif
-=======
-		if (end < kernel_x_start) {
-			map.pfn = __phys_to_pfn(start);
-			map.virtual = __phys_to_virt(start);
-			map.length = end - start;
-			map.type = MT_MEMORY_RWX;
-
-			create_mapping(&map);
-		} else if (start >= kernel_x_end) {
-			map.pfn = __phys_to_pfn(start);
-			map.virtual = __phys_to_virt(start);
-			map.length = end - start;
-			map.type = MT_MEMORY_RW;
-
-			create_mapping(&map);
-		} else {
-			/* This better cover the entire kernel */
-			if (start < kernel_x_start) {
-				map.pfn = __phys_to_pfn(start);
-				map.virtual = __phys_to_virt(start);
-				map.length = kernel_x_start - start;
-				map.type = MT_MEMORY_RW;
-
-				create_mapping(&map);
-			}
-
-			map.pfn = __phys_to_pfn(kernel_x_start);
-			map.virtual = __phys_to_virt(kernel_x_start);
-			map.length = kernel_x_end - kernel_x_start;
-			map.type = MT_MEMORY_RWX;
-
-			create_mapping(&map);
-
-			if (kernel_x_end < end) {
-				map.pfn = __phys_to_pfn(kernel_x_end);
-				map.virtual = __phys_to_virt(kernel_x_end);
-				map.length = end - kernel_x_end;
-				map.type = MT_MEMORY_RW;
-
-				create_mapping(&map);
-			}
-		}
-	}
-}
-
-#ifdef CONFIG_ARM_PV_FIXUP
-extern unsigned long __atags_pointer;
-typedef void pgtables_remap(long long offset, unsigned long pgd, void *bdata);
-pgtables_remap lpae_pgtables_remap_asm;
-
-/*
- * early_paging_init() recreates boot time page table setup, allowing machines
- * to switch over to a high (>4G) address space on LPAE systems
- */
-void __init early_paging_init(const struct machine_desc *mdesc)
-{
-	pgtables_remap *lpae_pgtables_remap;
-	unsigned long pa_pgd;
-	unsigned int cr, ttbcr;
-	long long offset;
-	void *boot_data;
-
-	if (!mdesc->pv_fixup)
-		return;
-
-	offset = mdesc->pv_fixup();
-	if (offset == 0)
-		return;
-
-	/*
-	 * Get the address of the remap function in the 1:1 identity
-	 * mapping setup by the early page table assembly code.  We
-	 * must get this prior to the pv update.  The following barrier
-	 * ensures that this is complete before we fixup any P:V offsets.
-	 */
-	lpae_pgtables_remap = (pgtables_remap *)(unsigned long)__pa(lpae_pgtables_remap_asm);
-	pa_pgd = __pa(swapper_pg_dir);
-	boot_data = __va(__atags_pointer);
-	barrier();
-
-	pr_info("Switching physical address space to 0x%08llx\n",
-		(u64)PHYS_OFFSET + offset);
-
-	/* Re-set the phys pfn offset, and the pv offset */
-	__pv_offset += offset;
-	__pv_phys_pfn_offset += PFN_DOWN(offset);
-
-	/* Run the patch stub to update the constants */
-	fixup_pv_table(&__pv_table_begin,
-		(&__pv_table_end - &__pv_table_begin) << 2);
-
-	/*
-	 * We changing not only the virtual to physical mapping, but also
-	 * the physical addresses used to access memory.  We need to flush
-	 * all levels of cache in the system with caching disabled to
-	 * ensure that all data is written back, and nothing is prefetched
-	 * into the caches.  We also need to prevent the TLB walkers
-	 * allocating into the caches too.  Note that this is ARMv7 LPAE
-	 * specific.
-	 */
-	cr = get_cr();
-	set_cr(cr & ~(CR_I | CR_C));
-	asm("mrc p15, 0, %0, c2, c0, 2" : "=r" (ttbcr));
-	asm volatile("mcr p15, 0, %0, c2, c0, 2"
-		: : "r" (ttbcr & ~(3 << 8 | 3 << 10)));
-	flush_cache_all();
-
-	/*
-	 * Fixup the page tables - this must be in the idmap region as
-	 * we need to disable the MMU to do this safely, and hence it
-	 * needs to be assembly.  It's fairly simple, as we're using the
-	 * temporary tables setup by the initial assembly code.
-	 */
-	lpae_pgtables_remap(offset, pa_pgd, boot_data);
-
-	/* Re-enable the caches and cacheable TLB walks */
-	asm volatile("mcr p15, 0, %0, c2, c0, 2" : : "r" (ttbcr));
-	set_cr(cr);
-}
-
-#else
-
-void __init early_paging_init(const struct machine_desc *mdesc)
-{
-	long long offset;
-
-	if (!mdesc->pv_fixup)
-		return;
-
-	offset = mdesc->pv_fixup();
-	if (offset == 0)
-		return;
-
-	pr_crit("Physical address space modification is only to support Keystone2.\n");
-	pr_crit("Please enable ARM_LPAE and ARM_PATCH_PHYS_VIRT support to use this\n");
-	pr_crit("feature. Your kernel may crash now, have a good day.\n");
-	add_taint(TAINT_CPU_OUT_OF_SPEC, LOCKDEP_STILL_OK);
-}
-
-#endif
-
-static void __init early_fixmap_shutdown(void)
-{
-	int i;
-	unsigned long va = fix_to_virt(__end_of_permanent_fixed_addresses - 1);
-
-	pte_offset_fixmap = pte_offset_late_fixmap;
-	pmd_clear(fixmap_pmd(va));
-	local_flush_tlb_kernel_page(va);
-
-	for (i = 0; i < __end_of_permanent_fixed_addresses; i++) {
-		pte_t *pte;
-		struct map_desc map;
-
-		map.virtual = fix_to_virt(i);
-		pte = pte_offset_early_fixmap(pmd_off_k(map.virtual), map.virtual);
-
-		/* Only i/o device mappings are supported ATM */
-		if (pte_none(*pte) ||
-		    (pte_val(*pte) & L_PTE_MT_MASK) != L_PTE_MT_DEV_SHARED)
-			continue;
-
-		map.pfn = pte_pfn(*pte);
-		map.type = MT_DEVICE;
-		map.length = PAGE_SIZE;
->>>>>>> android-4.9
 
 		create_mapping(&map);
 	}
@@ -2073,28 +1510,18 @@ static void __init early_fixmap_shutdown(void)
  * paging_init() sets up the page tables, initialises the zone memory
  * maps, and sets up the zero page, bad page and bad page tables.
  */
-void __init paging_init(const struct machine_desc *mdesc)
+void __init paging_init(struct machine_desc *mdesc)
 {
 	void *zero_page;
 
-<<<<<<< HEAD
 	memblock_set_current_limit(arm_lowmem_limit);
 
 	build_mem_type_table();
 	prepare_page_table();
 	map_lowmem();
 	dma_contiguous_remap();
-=======
-	build_mem_type_table();
-	prepare_page_table();
-	map_lowmem();
-	memblock_set_current_limit(arm_lowmem_limit);
-	dma_contiguous_remap();
-	early_fixmap_shutdown();
->>>>>>> android-4.9
 	devicemaps_init(mdesc);
 	kmap_init();
-	tcm_init();
 
 	top_pmd = pmd_off_k(0xffff0000);
 

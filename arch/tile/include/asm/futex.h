@@ -28,82 +28,29 @@
 #include <linux/futex.h>
 #include <linux/uaccess.h>
 #include <linux/errno.h>
-#include <asm/atomic.h>
 
-/*
- * Support macros for futex operations.  Do not use these macros directly.
- * They assume "ret", "val", "oparg", and "uaddr" in the lexical context.
- * __futex_cmpxchg() additionally assumes "oldval".
- */
+extern struct __get_user futex_set(u32 __user *v, int i);
+extern struct __get_user futex_add(u32 __user *v, int n);
+extern struct __get_user futex_or(u32 __user *v, int n);
+extern struct __get_user futex_andn(u32 __user *v, int n);
+extern struct __get_user futex_cmpxchg(u32 __user *v, int o, int n);
 
-#ifdef __tilegx__
-
-#define __futex_asm(OP) \
-	asm("1: {" #OP " %1, %3, %4; movei %0, 0 }\n"		\
-	    ".pushsection .fixup,\"ax\"\n"			\
-	    "0: { movei %0, %5; j 9f }\n"			\
-	    ".section __ex_table,\"a\"\n"			\
-	    ".align 8\n"					\
-	    ".quad 1b, 0b\n"					\
-	    ".popsection\n"					\
-	    "9:"						\
-	    : "=r" (ret), "=r" (val), "+m" (*(uaddr))		\
-	    : "r" (uaddr), "r" (oparg), "i" (-EFAULT))
-
-#define __futex_set() __futex_asm(exch4)
-#define __futex_add() __futex_asm(fetchadd4)
-#define __futex_or() __futex_asm(fetchor4)
-#define __futex_andn() ({ oparg = ~oparg; __futex_asm(fetchand4); })
-#define __futex_cmpxchg() \
-	({ __insn_mtspr(SPR_CMPEXCH_VALUE, oldval); __futex_asm(cmpexch4); })
-
-#define __futex_xor()						\
-	({							\
-		u32 oldval, n = oparg;				\
-		if ((ret = __get_user(oldval, uaddr)) == 0) {	\
-			do {					\
-				oparg = oldval ^ n;		\
-				__futex_cmpxchg();		\
-			} while (ret == 0 && oldval != val);	\
-		}						\
-	})
-
-/* No need to prefetch, since the atomic ops go to the home cache anyway. */
-#define __futex_prolog()
-
+#ifndef __tilegx__
+extern struct __get_user futex_xor(u32 __user *v, int n);
 #else
-
-#define __futex_call(FN)						\
-	{								\
-		struct __get_user gu = FN((u32 __force *)uaddr, lock, oparg); \
-		val = gu.val;						\
-		ret = gu.err;						\
+static inline struct __get_user futex_xor(u32 __user *uaddr, int n)
+{
+	struct __get_user asm_ret = __get_user_4(uaddr);
+	if (!asm_ret.err) {
+		int oldval, newval;
+		do {
+			oldval = asm_ret.val;
+			newval = oldval ^ n;
+			asm_ret = futex_cmpxchg(uaddr, oldval, newval);
+		} while (asm_ret.err == 0 && oldval != asm_ret.val);
 	}
-
-#define __futex_set() __futex_call(__atomic32_xchg)
-#define __futex_add() __futex_call(__atomic32_xchg_add)
-#define __futex_or() __futex_call(__atomic32_fetch_or)
-#define __futex_andn() __futex_call(__atomic32_fetch_andn)
-#define __futex_xor() __futex_call(__atomic32_fetch_xor)
-
-#define __futex_cmpxchg()						\
-	{								\
-		struct __get_user gu = __atomic32_cmpxchg((u32 __force *)uaddr, \
-							  lock, oldval, oparg); \
-		val = gu.val;						\
-		ret = gu.err;						\
-	}
-
-/*
- * Find the lock pointer for the atomic calls to use, and issue a
- * prefetch to the user address to bring it into cache.  Similar to
- * __atomic_setup(), but we can't do a read into the L1 since it might
- * fault; instead we do a prefetch into the L2.
- */
-#define __futex_prolog()					\
-	int *lock;						\
-	__insn_prefetch(uaddr);					\
-	lock = __atomic_hashed_lock((int __force *)uaddr)
+	return asm_ret;
+}
 #endif
 
 static inline int futex_atomic_op_inuser(int encoded_op, u32 __user *uaddr)
@@ -112,12 +59,8 @@ static inline int futex_atomic_op_inuser(int encoded_op, u32 __user *uaddr)
 	int cmp = (encoded_op >> 24) & 15;
 	int oparg = (encoded_op << 8) >> 20;
 	int cmparg = (encoded_op << 20) >> 20;
-	int uninitialized_var(val), ret;
-
-	__futex_prolog();
-
-	/* The 32-bit futex code makes this assumption, so validate it here. */
-	BUILD_BUG_ON(sizeof(atomic_t) != sizeof(int));
+	int ret;
+	struct __get_user asm_ret;
 
 	if (encoded_op & (FUTEX_OP_OPARG_SHIFT << 28))
 		oparg = 1 << oparg;
@@ -128,45 +71,46 @@ static inline int futex_atomic_op_inuser(int encoded_op, u32 __user *uaddr)
 	pagefault_disable();
 	switch (op) {
 	case FUTEX_OP_SET:
-		__futex_set();
+		asm_ret = futex_set(uaddr, oparg);
 		break;
 	case FUTEX_OP_ADD:
-		__futex_add();
+		asm_ret = futex_add(uaddr, oparg);
 		break;
 	case FUTEX_OP_OR:
-		__futex_or();
+		asm_ret = futex_or(uaddr, oparg);
 		break;
 	case FUTEX_OP_ANDN:
-		__futex_andn();
+		asm_ret = futex_andn(uaddr, oparg);
 		break;
 	case FUTEX_OP_XOR:
-		__futex_xor();
+		asm_ret = futex_xor(uaddr, oparg);
 		break;
 	default:
-		ret = -ENOSYS;
-		break;
+		asm_ret.err = -ENOSYS;
 	}
 	pagefault_enable();
+
+	ret = asm_ret.err;
 
 	if (!ret) {
 		switch (cmp) {
 		case FUTEX_OP_CMP_EQ:
-			ret = (val == cmparg);
+			ret = (asm_ret.val == cmparg);
 			break;
 		case FUTEX_OP_CMP_NE:
-			ret = (val != cmparg);
+			ret = (asm_ret.val != cmparg);
 			break;
 		case FUTEX_OP_CMP_LT:
-			ret = (val < cmparg);
+			ret = (asm_ret.val < cmparg);
 			break;
 		case FUTEX_OP_CMP_GE:
-			ret = (val >= cmparg);
+			ret = (asm_ret.val >= cmparg);
 			break;
 		case FUTEX_OP_CMP_LE:
-			ret = (val <= cmparg);
+			ret = (asm_ret.val <= cmparg);
 			break;
 		case FUTEX_OP_CMP_GT:
-			ret = (val > cmparg);
+			ret = (asm_ret.val > cmparg);
 			break;
 		default:
 			ret = -ENOSYS;
@@ -176,20 +120,22 @@ static inline int futex_atomic_op_inuser(int encoded_op, u32 __user *uaddr)
 }
 
 static inline int futex_atomic_cmpxchg_inatomic(u32 *uval, u32 __user *uaddr,
-						u32 oldval, u32 oparg)
+						u32 oldval, u32 newval)
 {
-	int ret, val;
-
-	__futex_prolog();
+	struct __get_user asm_ret;
 
 	if (!access_ok(VERIFY_WRITE, uaddr, sizeof(u32)))
 		return -EFAULT;
 
-	__futex_cmpxchg();
-
-	*uval = val;
-	return ret;
+	asm_ret = futex_cmpxchg(uaddr, oldval, newval);
+	*uval = asm_ret.val;
+	return asm_ret.err;
 }
+
+#ifndef __tilegx__
+/* Return failure from the atomic wrappers. */
+struct __get_user __atomic_bad_address(int __user *addr);
+#endif
 
 #endif /* !__ASSEMBLY__ */
 

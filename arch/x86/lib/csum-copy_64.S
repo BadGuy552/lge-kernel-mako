@@ -6,8 +6,8 @@
  * for more details. No warranty for anything given at all.
  */
 #include <linux/linkage.h>
+#include <asm/dwarf2.h>
 #include <asm/errno.h>
-#include <asm/asm.h>
 
 /*
  * Checksum copy with exception handling.
@@ -31,31 +31,47 @@
 
 	.macro source
 10:
-	_ASM_EXTABLE(10b, .Lbad_source)
+	.section __ex_table, "a"
+	.align 8
+	.quad 10b, .Lbad_source
+	.previous
 	.endm
 
 	.macro dest
 20:
-	_ASM_EXTABLE(20b, .Lbad_dest)
+	.section __ex_table, "a"
+	.align 8
+	.quad 20b, .Lbad_dest
+	.previous
 	.endm
 
 	.macro ignore L=.Lignore
 30:
-	_ASM_EXTABLE(30b, \L)
+	.section __ex_table, "a"
+	.align 8
+	.quad 30b, \L
+	.previous
 	.endm
 
 
 ENTRY(csum_partial_copy_generic)
+	CFI_STARTPROC
 	cmpl	$3*64, %edx
 	jle	.Lignore
 
 .Lignore:
 	subq  $7*8, %rsp
+	CFI_ADJUST_CFA_OFFSET 7*8
 	movq  %rbx, 2*8(%rsp)
+	CFI_REL_OFFSET rbx, 2*8
 	movq  %r12, 3*8(%rsp)
+	CFI_REL_OFFSET r12, 3*8
 	movq  %r14, 4*8(%rsp)
+	CFI_REL_OFFSET r14, 4*8
 	movq  %r13, 5*8(%rsp)
+	CFI_REL_OFFSET r13, 5*8
 	movq  %rbp, 6*8(%rsp)
+	CFI_REL_OFFSET rbp, 6*8
 
 	movq  %r8, (%rsp)
 	movq  %r9, 1*8(%rsp)
@@ -188,7 +204,7 @@ ENTRY(csum_partial_copy_generic)
 
 	/* handle last odd byte */
 .Lhandle_1:
-	testb $1, %r10b
+	testl $1, %r10d
 	jz    .Lende
 	xorl  %ebx, %ebx
 	source
@@ -198,14 +214,22 @@ ENTRY(csum_partial_copy_generic)
 	addl %ebx, %eax
 	adcl %r9d, %eax		/* carry */
 
+	CFI_REMEMBER_STATE
 .Lende:
 	movq 2*8(%rsp), %rbx
+	CFI_RESTORE rbx
 	movq 3*8(%rsp), %r12
+	CFI_RESTORE r12
 	movq 4*8(%rsp), %r14
+	CFI_RESTORE r14
 	movq 5*8(%rsp), %r13
+	CFI_RESTORE r13
 	movq 6*8(%rsp), %rbp
+	CFI_RESTORE rbp
 	addq $7*8, %rsp
+	CFI_ADJUST_CFA_OFFSET -7*8
 	ret
+	CFI_RESTORE_STATE
 
 	/* Exception handlers. Very simple, zeroing is done in the wrappers */
 .Lbad_source:
@@ -221,4 +245,5 @@ ENTRY(csum_partial_copy_generic)
 	jz   .Lende
 	movl $-EFAULT, (%rax)
 	jmp .Lende
+	CFI_ENDPROC
 ENDPROC(csum_partial_copy_generic)

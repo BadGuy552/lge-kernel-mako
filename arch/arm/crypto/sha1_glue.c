@@ -22,21 +22,13 @@
 #include <linux/cryptohash.h>
 #include <linux/types.h>
 #include <crypto/sha.h>
-<<<<<<< HEAD
 #include <asm/byteorder.h>
 #include <asm/crypto/sha1.h>
 
-=======
-#include <crypto/sha1_base.h>
-#include <asm/byteorder.h>
-
-#include "sha1.h"
->>>>>>> android-4.9
 
 asmlinkage void sha1_block_data_order(u32 *digest,
 		const unsigned char *data, unsigned int rounds);
 
-<<<<<<< HEAD
 
 static int sha1_init(struct shash_desc *desc)
 {
@@ -151,41 +143,6 @@ static struct shash_alg alg = {
 	.import		=	sha1_import,
 	.descsize	=	sizeof(struct sha1_state),
 	.statesize	=	sizeof(struct sha1_state),
-=======
-int sha1_update_arm(struct shash_desc *desc, const u8 *data,
-		    unsigned int len)
-{
-	/* make sure casting to sha1_block_fn() is safe */
-	BUILD_BUG_ON(offsetof(struct sha1_state, state) != 0);
-
-	return sha1_base_do_update(desc, data, len,
-				   (sha1_block_fn *)sha1_block_data_order);
-}
-EXPORT_SYMBOL_GPL(sha1_update_arm);
-
-static int sha1_final(struct shash_desc *desc, u8 *out)
-{
-	sha1_base_do_finalize(desc, (sha1_block_fn *)sha1_block_data_order);
-	return sha1_base_finish(desc, out);
-}
-
-int sha1_finup_arm(struct shash_desc *desc, const u8 *data,
-		   unsigned int len, u8 *out)
-{
-	sha1_base_do_update(desc, data, len,
-			    (sha1_block_fn *)sha1_block_data_order);
-	return sha1_final(desc, out);
-}
-EXPORT_SYMBOL_GPL(sha1_finup_arm);
-
-static struct shash_alg alg = {
-	.digestsize	=	SHA1_DIGEST_SIZE,
-	.init		=	sha1_base_init,
-	.update		=	sha1_update_arm,
-	.final		=	sha1_final,
-	.finup		=	sha1_finup_arm,
-	.descsize	=	sizeof(struct sha1_state),
->>>>>>> android-4.9
 	.base		=	{
 		.cra_name	=	"sha1",
 		.cra_driver_name=	"sha1-asm",
@@ -214,9 +171,5 @@ module_exit(sha1_mod_fini);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("SHA1 Secure Hash Algorithm (ARM)");
-<<<<<<< HEAD
 MODULE_ALIAS("sha1");
-=======
-MODULE_ALIAS_CRYPTO("sha1");
->>>>>>> android-4.9
 MODULE_AUTHOR("David McCullough <ucdevel@gmail.com>");

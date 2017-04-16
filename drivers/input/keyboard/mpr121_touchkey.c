@@ -13,6 +13,7 @@
  */
 
 #include <linux/module.h>
+#include <linux/init.h>
 #include <linux/input.h>
 #include <linux/i2c.h>
 #include <linux/slab.h>
@@ -70,7 +71,7 @@ struct mpr121_init_register {
 	u8 val;
 };
 
-static const struct mpr121_init_register init_reg_table[] = {
+static const struct mpr121_init_register init_reg_table[] __devinitconst = {
 	{ MHD_RISING_ADDR,	0x1 },
 	{ NHD_RISING_ADDR,	0x1 },
 	{ MHD_FALLING_ADDR,	0x1 },
@@ -122,7 +123,7 @@ out:
 	return IRQ_HANDLED;
 }
 
-static int mpr121_phys_init(const struct mpr121_platform_data *pdata,
+static int __devinit mpr121_phys_init(const struct mpr121_platform_data *pdata,
 				      struct mpr121_touchkey *mpr121,
 				      struct i2c_client *client)
 {
@@ -184,11 +185,10 @@ err_i2c_write:
 	return ret;
 }
 
-static int mpr_touchkey_probe(struct i2c_client *client,
-			      const struct i2c_device_id *id)
+static int __devinit mpr_touchkey_probe(struct i2c_client *client,
+					const struct i2c_device_id *id)
 {
-	const struct mpr121_platform_data *pdata =
-			dev_get_platdata(&client->dev);
+	const struct mpr121_platform_data *pdata = client->dev.platform_data;
 	struct mpr121_touchkey *mpr121;
 	struct input_dev *input_dev;
 	int error;
@@ -214,14 +214,13 @@ static int mpr_touchkey_probe(struct i2c_client *client,
 		return -EINVAL;
 	}
 
-	mpr121 = devm_kzalloc(&client->dev, sizeof(*mpr121),
-			      GFP_KERNEL);
-	if (!mpr121)
-		return -ENOMEM;
-
-	input_dev = devm_input_allocate_device(&client->dev);
-	if (!input_dev)
-		return -ENOMEM;
+	mpr121 = kzalloc(sizeof(struct mpr121_touchkey), GFP_KERNEL);
+	input_dev = input_allocate_device();
+	if (!mpr121 || !input_dev) {
+		dev_err(&client->dev, "Failed to allocate memory\n");
+		error = -ENOMEM;
+		goto err_free_mem;
+	}
 
 	mpr121->client = client;
 	mpr121->input_dev = input_dev;
@@ -244,24 +243,42 @@ static int mpr_touchkey_probe(struct i2c_client *client,
 	error = mpr121_phys_init(pdata, mpr121, client);
 	if (error) {
 		dev_err(&client->dev, "Failed to init register\n");
-		return error;
+		goto err_free_mem;
 	}
 
-	error = devm_request_threaded_irq(&client->dev, client->irq, NULL,
+	error = request_threaded_irq(client->irq, NULL,
 				     mpr_touchkey_interrupt,
-				     IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+				     IRQF_TRIGGER_FALLING,
 				     client->dev.driver->name, mpr121);
 	if (error) {
 		dev_err(&client->dev, "Failed to register interrupt\n");
-		return error;
+		goto err_free_mem;
 	}
 
 	error = input_register_device(input_dev);
 	if (error)
-		return error;
+		goto err_free_irq;
 
 	i2c_set_clientdata(client, mpr121);
 	device_init_wakeup(&client->dev, pdata->wakeup);
+
+	return 0;
+
+err_free_irq:
+	free_irq(client->irq, mpr121);
+err_free_mem:
+	input_free_device(input_dev);
+	kfree(mpr121);
+	return error;
+}
+
+static int __devexit mpr_touchkey_remove(struct i2c_client *client)
+{
+	struct mpr121_touchkey *mpr121 = i2c_get_clientdata(client);
+
+	free_irq(client->irq, mpr121);
+	input_unregister_device(mpr121->input_dev);
+	kfree(mpr121);
 
 	return 0;
 }
@@ -305,10 +322,12 @@ MODULE_DEVICE_TABLE(i2c, mpr121_id);
 static struct i2c_driver mpr_touchkey_driver = {
 	.driver = {
 		.name	= "mpr121",
+		.owner	= THIS_MODULE,
 		.pm	= &mpr121_touchkey_pm_ops,
 	},
 	.id_table	= mpr121_id,
 	.probe		= mpr_touchkey_probe,
+	.remove		= __devexit_p(mpr_touchkey_remove),
 };
 
 module_i2c_driver(mpr_touchkey_driver);

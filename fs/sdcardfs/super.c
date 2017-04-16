@@ -36,11 +36,7 @@ static void sdcardfs_put_super(struct super_block *sb)
 	if (!spd)
 		return;
 
-<<<<<<< HEAD
 	if(spd->obbpath_s) {
-=======
-	if (spd->obbpath_s) {
->>>>>>> android-4.9
 		kfree(spd->obbpath_s);
 		path_put(&spd->obbpath);
 	}
@@ -68,11 +64,7 @@ static int sdcardfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 	if (sbi->options.reserved_mb) {
 		/* Invalid statfs informations. */
 		if (buf->f_bsize == 0) {
-<<<<<<< HEAD
 			printk(KERN_ERR "Returned block size is zero.\n");
-=======
-			pr_err("Returned block size is zero.\n");
->>>>>>> android-4.9
 			return -EINVAL;
 		}
 
@@ -108,12 +100,8 @@ static int sdcardfs_remount_fs(struct super_block *sb, int *flags, char *options
 	 * SILENT, but anything else left over is an error.
 	 */
 	if ((*flags & ~(MS_RDONLY | MS_MANDLOCK | MS_SILENT)) != 0) {
-<<<<<<< HEAD
 		printk(KERN_ERR
 		       "sdcardfs: remount flags 0x%x unsupported\n", *flags);
-=======
-		pr_err("sdcardfs: remount flags 0x%x unsupported\n", *flags);
->>>>>>> android-4.9
 		err = -EINVAL;
 	}
 
@@ -121,57 +109,6 @@ static int sdcardfs_remount_fs(struct super_block *sb, int *flags, char *options
 }
 
 /*
-<<<<<<< HEAD
-=======
- * @mnt: mount point we are remounting
- * @sb: superblock we are remounting
- * @flags: numeric mount options
- * @options: mount options string
- */
-static int sdcardfs_remount_fs2(struct vfsmount *mnt, struct super_block *sb,
-						int *flags, char *options)
-{
-	int err = 0;
-
-	/*
-	 * The VFS will take care of "ro" and "rw" flags among others.  We
-	 * can safely accept a few flags (RDONLY, MANDLOCK), and honor
-	 * SILENT, but anything else left over is an error.
-	 */
-	if ((*flags & ~(MS_RDONLY | MS_MANDLOCK | MS_SILENT | MS_REMOUNT)) != 0) {
-		pr_err("sdcardfs: remount flags 0x%x unsupported\n", *flags);
-		err = -EINVAL;
-	}
-	pr_info("Remount options were %s for vfsmnt %p.\n", options, mnt);
-	err = parse_options_remount(sb, options, *flags & ~MS_SILENT, mnt->data);
-
-
-	return err;
-}
-
-static void *sdcardfs_clone_mnt_data(void *data)
-{
-	struct sdcardfs_vfsmount_options *opt = kmalloc(sizeof(struct sdcardfs_vfsmount_options), GFP_KERNEL);
-	struct sdcardfs_vfsmount_options *old = data;
-
-	if (!opt)
-		return NULL;
-	opt->gid = old->gid;
-	opt->mask = old->mask;
-	return opt;
-}
-
-static void sdcardfs_copy_mnt_data(void *data, void *newdata)
-{
-	struct sdcardfs_vfsmount_options *old = data;
-	struct sdcardfs_vfsmount_options *new = newdata;
-
-	old->gid = new->gid;
-	old->mask = new->mask;
-}
-
-/*
->>>>>>> android-4.9
  * Called by iput() when the inode reference count reached zero
  * and the inode is not hashed anywhere.  Used to clear anything
  * that needs to be, before the inode is completely destroyed and put
@@ -182,21 +119,13 @@ static void sdcardfs_evict_inode(struct inode *inode)
 	struct inode *lower_inode;
 
 	truncate_inode_pages(&inode->i_data, 0);
-<<<<<<< HEAD
 	end_writeback(inode);
-=======
-	clear_inode(inode);
->>>>>>> android-4.9
 	/*
 	 * Decrement a reference to a lower_inode, which was incremented
 	 * by our read_inode when it was created initially.
 	 */
 	lower_inode = sdcardfs_lower_inode(inode);
 	sdcardfs_set_lower_inode(inode, NULL);
-<<<<<<< HEAD
-=======
-	set_top(SDCARDFS_I(inode), inode);
->>>>>>> android-4.9
 	iput(lower_inode);
 }
 
@@ -244,12 +173,8 @@ int sdcardfs_init_inode_cache(void)
 /* sdcardfs inode cache destructor */
 void sdcardfs_destroy_inode_cache(void)
 {
-<<<<<<< HEAD
 	if (sdcardfs_inode_cachep)
 		kmem_cache_destroy(sdcardfs_inode_cachep);
-=======
-	kmem_cache_destroy(sdcardfs_inode_cachep);
->>>>>>> android-4.9
 }
 
 /*
@@ -265,7 +190,6 @@ static void sdcardfs_umount_begin(struct super_block *sb)
 		lower_sb->s_op->umount_begin(lower_sb);
 }
 
-<<<<<<< HEAD
 static int sdcardfs_show_options(struct seq_file *m, struct dentry *root)
 {
 	struct sdcardfs_sb_info *sbi = SDCARDFS_SB(root->d_sb);
@@ -279,27 +203,6 @@ static int sdcardfs_show_options(struct seq_file *m, struct dentry *root)
 	if (opts->multiuser)
 		seq_printf(m, ",multiuser");
 
-=======
-static int sdcardfs_show_options(struct vfsmount *mnt, struct seq_file *m,
-			struct dentry *root)
-{
-	struct sdcardfs_sb_info *sbi = SDCARDFS_SB(root->d_sb);
-	struct sdcardfs_mount_options *opts = &sbi->options;
-	struct sdcardfs_vfsmount_options *vfsopts = mnt->data;
-
-	if (opts->fs_low_uid != 0)
-		seq_printf(m, ",fsuid=%u", opts->fs_low_uid);
-	if (opts->fs_low_gid != 0)
-		seq_printf(m, ",fsgid=%u", opts->fs_low_gid);
-	if (vfsopts->gid != 0)
-		seq_printf(m, ",gid=%u", vfsopts->gid);
-	if (opts->multiuser)
-		seq_puts(m, ",multiuser");
-	if (vfsopts->mask)
-		seq_printf(m, ",mask=%u", vfsopts->mask);
-	if (opts->fs_user_id)
-		seq_printf(m, ",userid=%u", opts->fs_user_id);
->>>>>>> android-4.9
 	if (opts->reserved_mb != 0)
 		seq_printf(m, ",reserved=%uMB", opts->reserved_mb);
 
@@ -310,18 +213,9 @@ const struct super_operations sdcardfs_sops = {
 	.put_super	= sdcardfs_put_super,
 	.statfs		= sdcardfs_statfs,
 	.remount_fs	= sdcardfs_remount_fs,
-<<<<<<< HEAD
 	.evict_inode	= sdcardfs_evict_inode,
 	.umount_begin	= sdcardfs_umount_begin,
 	.show_options	= sdcardfs_show_options,
-=======
-	.remount_fs2	= sdcardfs_remount_fs2,
-	.clone_mnt_data	= sdcardfs_clone_mnt_data,
-	.copy_mnt_data	= sdcardfs_copy_mnt_data,
-	.evict_inode	= sdcardfs_evict_inode,
-	.umount_begin	= sdcardfs_umount_begin,
-	.show_options2	= sdcardfs_show_options,
->>>>>>> android-4.9
 	.alloc_inode	= sdcardfs_alloc_inode,
 	.destroy_inode	= sdcardfs_destroy_inode,
 	.drop_inode	= generic_delete_inode,

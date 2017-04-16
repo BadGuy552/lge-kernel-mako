@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 ccflags-$(CONFIG_POWER_SUPPLY_DEBUG) := -DDEBUG
 
 power_supply-y				:= power_supply_core.o
@@ -63,8 +62,3 @@ obj-$(CONFIG_CHARGER_SMB347)	+= smb347-charger.o
 obj-$(CONFIG_BQ51051B_CHARGER)	+= bq51051b_charger.o
 obj-$(CONFIG_BATTERY_TEMP_CONTROL) += battery_temp_ctrl.o
 obj-$(CONFIG_BATTERY_ASUS_BQ27541)	+= bq27541_battery.o
-=======
-obj-$(CONFIG_POWER_AVS)		+= avs/
-obj-$(CONFIG_POWER_RESET)	+= reset/
-obj-$(CONFIG_POWER_SUPPLY)	+= supply/
->>>>>>> android-4.9

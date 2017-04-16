@@ -261,10 +261,7 @@ static void flatten_tree(struct node *tree, struct emitter *emit,
 {
 	struct property *prop;
 	struct node *child;
-	bool seen_name_prop = false;
-
-	if (tree->deleted)
-		return;
+	int seen_name_prop = 0;
 
 	emit->beginnode(etarget, tree->labels);
 
@@ -279,7 +276,7 @@ static void flatten_tree(struct node *tree, struct emitter *emit,
 		int nameoff;
 
 		if (streq(prop->name, "name"))
-			seen_name_prop = true;
+			seen_name_prop = 1;
 
 		nameoff = stringtable_insert(strbuf, prop->name);
 
@@ -889,7 +886,7 @@ struct boot_info *dt_from_blob(const char *fname)
 
 	if (version >= 3) {
 		uint32_t size_str = fdt32_to_cpu(fdt->size_dt_strings);
-		if ((off_str+size_str < off_str) || (off_str+size_str > totalsize))
+		if (off_str+size_str > totalsize)
 			die("String table extends past total size\n");
 		inbuf_init(&strbuf, blob + off_str, blob + off_str + size_str);
 	} else {
@@ -898,7 +895,7 @@ struct boot_info *dt_from_blob(const char *fname)
 
 	if (version >= 17) {
 		size_dt = fdt32_to_cpu(fdt->size_dt_struct);
-		if ((off_dt+size_dt < off_dt) || (off_dt+size_dt > totalsize))
+		if (off_dt+size_dt > totalsize)
 			die("Structure block extends past total size\n");
 	}
 

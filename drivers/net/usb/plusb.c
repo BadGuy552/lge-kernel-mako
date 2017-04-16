@@ -13,13 +13,15 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, see <http://www.gnu.org/licenses/>.
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 // #define	DEBUG			// error path messages, extra info
 // #define	VERBOSE			// more; success messages
 
 #include <linux/module.h>
+#include <linux/init.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/ethtool.h>
@@ -38,7 +40,7 @@
  * HEADS UP:  this handshaking isn't all that robust.  This driver
  * gets confused easily if you unplug one end of the cable then
  * try to connect it again; you'll need to restart both ends. The
- * "naplink" software (used by some PlayStation/2 developers) does
+ * "naplink" software (used by some PlayStation/2 deveopers) does
  * the handshaking much better!   Also, sometimes this hardware
  * seems to get wedged under load.  Prolific docs are weak, and
  * don't identify differences between PL2301 and PL2302, much less
@@ -69,10 +71,13 @@
 static inline int
 pl_vendor_req(struct usbnet *dev, u8 req, u8 val, u8 index)
 {
-	return usbnet_read_cmd(dev, req,
-				USB_DIR_IN | USB_TYPE_VENDOR |
-				USB_RECIP_DEVICE,
-				val, index, NULL, 0);
+	return usb_control_msg(dev->udev,
+		usb_rcvctrlpipe(dev->udev, 0),
+		req,
+		USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
+		val, index,
+		NULL, 0,
+		USB_CTRL_GET_TIMEOUT);
 }
 
 static inline int
@@ -134,11 +139,6 @@ static const struct usb_device_id	products [] = {
 }, {
 	USB_DEVICE(0x050d, 0x258a),     /* Belkin F5U258/F5U279 (PL-25A1) */
 	.driver_info =  (unsigned long) &prolific_info,
-}, {
-	USB_DEVICE(0x3923, 0x7825),     /* National Instruments USB
-					 * Host-to-Host Cable
-					 */
-	.driver_info =  (unsigned long) &prolific_info,
 },
 
 	{ },		// END
@@ -152,7 +152,6 @@ static struct usb_driver plusb_driver = {
 	.disconnect =	usbnet_disconnect,
 	.suspend =	usbnet_suspend,
 	.resume =	usbnet_resume,
-	.disable_hub_initiated_lpm = 1,
 };
 
 module_usb_driver(plusb_driver);

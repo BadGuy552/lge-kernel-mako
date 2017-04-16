@@ -208,7 +208,7 @@ static int hidinput_setkeycode(struct input_dev *dev,
  * Only exponent 1 length units are processed. Centimeters and inches are
  * converted to millimeters. Degrees are converted to radians.
  */
-__s32 hidinput_calc_abs_res(const struct hid_field *field, __u16 code)
+static __s32 hidinput_calc_abs_res(const struct hid_field *field, __u16 code)
 {
 	__s32 unit_exponent = field->unit_exponent;
 	__s32 logical_extents = field->logical_maximum -
@@ -225,16 +225,7 @@ __s32 hidinput_calc_abs_res(const struct hid_field *field, __u16 code)
 	 * Verify and convert units.
 	 * See HID specification v1.11 6.2.2.7 Global Items for unit decoding
 	 */
-	switch (code) {
-	case ABS_X:
-	case ABS_Y:
-	case ABS_Z:
-	case ABS_MT_POSITION_X:
-	case ABS_MT_POSITION_Y:
-	case ABS_MT_TOOL_X:
-	case ABS_MT_TOOL_Y:
-	case ABS_MT_TOUCH_MAJOR:
-	case ABS_MT_TOUCH_MINOR:
+	if (code == ABS_X || code == ABS_Y || code == ABS_Z) {
 		if (field->unit == 0x11) {		/* If centimeters */
 			/* Convert to millimeters */
 			unit_exponent += 1;
@@ -248,13 +239,7 @@ __s32 hidinput_calc_abs_res(const struct hid_field *field, __u16 code)
 		} else {
 			return 0;
 		}
-		break;
-
-	case ABS_RX:
-	case ABS_RY:
-	case ABS_RZ:
-	case ABS_TILT_X:
-	case ABS_TILT_Y:
+	} else if (code == ABS_RX || code == ABS_RY || code == ABS_RZ) {
 		if (field->unit == 0x14) {		/* If degrees */
 			/* Convert to radians */
 			prev = logical_extents;
@@ -265,9 +250,7 @@ __s32 hidinput_calc_abs_res(const struct hid_field *field, __u16 code)
 		} else if (field->unit != 0x12) {	/* If not radians */
 			return 0;
 		}
-		break;
-
-	default:
+	} else {
 		return 0;
 	}
 
@@ -287,9 +270,8 @@ __s32 hidinput_calc_abs_res(const struct hid_field *field, __u16 code)
 	}
 
 	/* Calculate resolution */
-	return DIV_ROUND_CLOSEST(logical_extents, physical_extents);
+	return logical_extents / physical_extents;
 }
-EXPORT_SYMBOL_GPL(hidinput_calc_abs_res);
 
 #ifdef CONFIG_HID_BATTERY_STRENGTH
 static enum power_supply_property hidinput_battery_props[] = {
@@ -303,27 +285,11 @@ static enum power_supply_property hidinput_battery_props[] = {
 
 #define HID_BATTERY_QUIRK_PERCENT	(1 << 0) /* always reports percent */
 #define HID_BATTERY_QUIRK_FEATURE	(1 << 1) /* ask for feature report */
-#define HID_BATTERY_QUIRK_IGNORE	(1 << 2) /* completely ignore the battery */
 
 static const struct hid_device_id hid_battery_quirks[] = {
 	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_APPLE,
-		USB_DEVICE_ID_APPLE_ALU_WIRELESS_2009_ISO),
+			       USB_DEVICE_ID_APPLE_ALU_WIRELESS_2011_ANSI),
 	  HID_BATTERY_QUIRK_PERCENT | HID_BATTERY_QUIRK_FEATURE },
-	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_APPLE,
-		USB_DEVICE_ID_APPLE_ALU_WIRELESS_2009_ANSI),
-	  HID_BATTERY_QUIRK_PERCENT | HID_BATTERY_QUIRK_FEATURE },
-	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_APPLE,
-		USB_DEVICE_ID_APPLE_ALU_WIRELESS_2011_ANSI),
-	  HID_BATTERY_QUIRK_PERCENT | HID_BATTERY_QUIRK_FEATURE },
-	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_APPLE,
-			       USB_DEVICE_ID_APPLE_ALU_WIRELESS_2011_ISO),
-	  HID_BATTERY_QUIRK_PERCENT | HID_BATTERY_QUIRK_FEATURE },
-	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_APPLE,
-		USB_DEVICE_ID_APPLE_ALU_WIRELESS_ANSI),
-	  HID_BATTERY_QUIRK_PERCENT | HID_BATTERY_QUIRK_FEATURE },
-	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_ELECOM,
-		USB_DEVICE_ID_ELECOM_BM084),
-	  HID_BATTERY_QUIRK_IGNORE },
 	{}
 };
 
@@ -343,9 +309,9 @@ static int hidinput_get_battery_property(struct power_supply *psy,
 					 enum power_supply_property prop,
 					 union power_supply_propval *val)
 {
-	struct hid_device *dev = power_supply_get_drvdata(psy);
+	struct hid_device *dev = container_of(psy, struct hid_device, battery);
 	int ret = 0;
-	__u8 *buf;
+	__u8 buf[2] = {};
 
 	switch (prop) {
 	case POWER_SUPPLY_PROP_PRESENT:
@@ -354,29 +320,21 @@ static int hidinput_get_battery_property(struct power_supply *psy,
 		break;
 
 	case POWER_SUPPLY_PROP_CAPACITY:
-
-		buf = kmalloc(2 * sizeof(__u8), GFP_KERNEL);
-		if (!buf) {
-			ret = -ENOMEM;
-			break;
-		}
-		ret = hid_hw_raw_request(dev, dev->battery_report_id, buf, 2,
-					 dev->battery_report_type,
-					 HID_REQ_GET_REPORT);
+		ret = dev->hid_get_raw_report(dev, dev->battery_report_id,
+					      buf, sizeof(buf),
+					      dev->battery_report_type);
 
 		if (ret != 2) {
-			ret = -ENODATA;
-			kfree(buf);
+			if (ret >= 0)
+				ret = -EINVAL;
 			break;
 		}
-		ret = 0;
 
 		if (dev->battery_min < dev->battery_max &&
 		    buf[1] >= dev->battery_min &&
 		    buf[1] <= dev->battery_max)
 			val->intval = (100 * (buf[1] - dev->battery_min)) /
 				(dev->battery_max - dev->battery_min);
-		kfree(buf);
 		break;
 
 	case POWER_SUPPLY_PROP_MODEL_NAME:
@@ -401,40 +359,31 @@ static int hidinput_get_battery_property(struct power_supply *psy,
 
 static bool hidinput_setup_battery(struct hid_device *dev, unsigned report_type, struct hid_field *field)
 {
-	struct power_supply_desc *psy_desc = NULL;
-	struct power_supply_config psy_cfg = { .drv_data = dev, };
+	struct power_supply *battery = &dev->battery;
+	int ret;
 	unsigned quirks;
 	s32 min, max;
 
 	if (field->usage->hid != HID_DC_BATTERYSTRENGTH)
 		return false;	/* no match */
 
-	if (dev->battery != NULL)
+	if (battery->name != NULL)
 		goto out;	/* already initialized? */
+
+	battery->name = kasprintf(GFP_KERNEL, "hid-%s-battery", dev->uniq);
+	if (battery->name == NULL)
+		goto out;
+
+	battery->type = POWER_SUPPLY_TYPE_BATTERY;
+	battery->properties = hidinput_battery_props;
+	battery->num_properties = ARRAY_SIZE(hidinput_battery_props);
+	battery->use_for_apm = 0;
+	battery->get_property = hidinput_get_battery_property;
 
 	quirks = find_battery_quirk(dev);
 
 	hid_dbg(dev, "device %x:%x:%x %d quirks %d\n",
 		dev->bus, dev->vendor, dev->product, dev->version, quirks);
-
-	if (quirks & HID_BATTERY_QUIRK_IGNORE)
-		goto out;
-
-	psy_desc = kzalloc(sizeof(*psy_desc), GFP_KERNEL);
-	if (psy_desc == NULL)
-		goto out;
-
-	psy_desc->name = kasprintf(GFP_KERNEL, "hid-%s-battery", dev->uniq);
-	if (psy_desc->name == NULL) {
-		kfree(psy_desc);
-		goto out;
-	}
-
-	psy_desc->type = POWER_SUPPLY_TYPE_BATTERY;
-	psy_desc->properties = hidinput_battery_props;
-	psy_desc->num_properties = ARRAY_SIZE(hidinput_battery_props);
-	psy_desc->use_for_apm = 0;
-	psy_desc->get_property = hidinput_get_battery_property;
 
 	min = field->logical_minimum;
 	max = field->logical_maximum;
@@ -452,16 +401,14 @@ static bool hidinput_setup_battery(struct hid_device *dev, unsigned report_type,
 	dev->battery_report_type = report_type;
 	dev->battery_report_id = field->report->id;
 
-	dev->battery = power_supply_register(&dev->dev, psy_desc, &psy_cfg);
-	if (IS_ERR(dev->battery)) {
-		hid_warn(dev, "can't register power supply: %ld\n",
-				PTR_ERR(dev->battery));
-		kfree(psy_desc->name);
-		kfree(psy_desc);
-		dev->battery = NULL;
-	} else {
-		power_supply_powers(dev->battery, &dev->dev);
+	ret = power_supply_register(&dev->dev, battery);
+	if (ret != 0) {
+		hid_warn(dev, "can't register power supply: %d\n", ret);
+		kfree(battery->name);
+		battery->name = NULL;
 	}
+
+	power_supply_powers(battery, &dev->dev);
 
 out:
 	return true;
@@ -469,16 +416,12 @@ out:
 
 static void hidinput_cleanup_battery(struct hid_device *dev)
 {
-	const struct power_supply_desc *psy_desc;
-
-	if (!dev->battery)
+	if (!dev->battery.name)
 		return;
 
-	psy_desc = dev->battery->desc;
-	power_supply_unregister(dev->battery);
-	kfree(psy_desc->name);
-	kfree(psy_desc);
-	dev->battery = NULL;
+	power_supply_unregister(&dev->battery);
+	kfree(dev->battery.name);
+	dev->battery.name = NULL;
 }
 #else  /* !CONFIG_HID_BATTERY_STRENGTH */
 static bool hidinput_setup_battery(struct hid_device *dev, unsigned report_type,
@@ -503,10 +446,6 @@ static void hidinput_configure_usage(struct hid_input *hidinput, struct hid_fiel
 	field->hidinput = hidinput;
 
 	if (field->flags & HID_MAIN_ITEM_CONSTANT)
-		goto ignore;
-
-	/* Ignore if report count is out of bounds. */
-	if (field->report_count < 1)
 		goto ignore;
 
 	/* only LED usages are supported in output fields */
@@ -549,14 +488,9 @@ static void hidinput_configure_usage(struct hid_input *hidinput, struct hid_fiel
 				if (code <= 0xf)
 					code += BTN_JOYSTICK;
 				else
-					code += BTN_TRIGGER_HAPPY - 0x10;
+					code += BTN_TRIGGER_HAPPY;
 				break;
-		case HID_GD_GAMEPAD:
-				if (code <= 0xf)
-					code += BTN_GAMEPAD;
-				else
-					code += BTN_TRIGGER_HAPPY - 0x10;
-				break;
+		case HID_GD_GAMEPAD:  code += BTN_GAMEPAD; break;
 		default:
 			switch (field->physical) {
 			case HID_GD_MOUSE:
@@ -604,15 +538,6 @@ static void hidinput_configure_usage(struct hid_input *hidinput, struct hid_fiel
 			break;
 		}
 
-		/*
-		 * Some lazy vendors declare 255 usages for System Control,
-		 * leading to the creation of ABS_X|Y axis and too many others.
-		 * It wouldn't be a problem if joydev doesn't consider the
-		 * device as a joystick then.
-		 */
-		if (field->application == HID_GD_SYSTEM_CONTROL)
-			goto ignore;
-
 		if ((usage->hid & 0xf0) == 0x90) {	/* D-pad */
 			switch (usage->hid) {
 			case HID_GD_UP:	   usage->hat_dir = 1; break;
@@ -633,12 +558,6 @@ static void hidinput_configure_usage(struct hid_input *hidinput, struct hid_fiel
 		/* These usage IDs map directly to the usage codes. */
 		case HID_GD_X: case HID_GD_Y: case HID_GD_Z:
 		case HID_GD_RX: case HID_GD_RY: case HID_GD_RZ:
-			if (field->flags & HID_MAIN_ITEM_RELATIVE)
-				map_rel(usage->hid & 0xf);
-			else
-				map_abs_clear(usage->hid & 0xf);
-			break;
-
 		case HID_GD_SLIDER: case HID_GD_DIAL: case HID_GD_WHEEL:
 			if (field->flags & HID_MAIN_ITEM_RELATIVE)
 				map_rel(usage->hid & 0xf);
@@ -704,14 +623,6 @@ static void hidinput_configure_usage(struct hid_input *hidinput, struct hid_fiel
 			map_key_clear(BTN_TOOL_RUBBER);
 			break;
 
-		case 0x3d: /* X Tilt */
-			map_abs_clear(ABS_TILT_X);
-			break;
-
-		case 0x3e: /* Y Tilt */
-			map_abs_clear(ABS_TILT_Y);
-			break;
-
 		case 0x33: /* Touch */
 		case 0x42: /* TipSwitch */
 		case 0x43: /* TipSwitch2 */
@@ -724,41 +635,14 @@ static void hidinput_configure_usage(struct hid_input *hidinput, struct hid_fiel
 			break;
 
 		case 0x46: /* TabletPick */
-		case 0x5a: /* SecondaryBarrelSwitch */
 			map_key_clear(BTN_STYLUS2);
 			break;
 
-		case 0x5b: /* TransducerSerialNumber */
-			usage->type = EV_MSC;
-			usage->code = MSC_SERIAL;
-			bit = input->mscbit;
-			max = MSC_MAX;
-			break;
+		case 0x51: /* ContactID */
+			device->quirks |= HID_QUIRK_MULTITOUCH;
+			goto unknown;
 
 		default:  goto unknown;
-		}
-		break;
-
-	case HID_UP_TELEPHONY:
-		switch (usage->hid & HID_USAGE) {
-		case 0x2f: map_key_clear(KEY_MICMUTE);		break;
-		case 0xb0: map_key_clear(KEY_NUMERIC_0);	break;
-		case 0xb1: map_key_clear(KEY_NUMERIC_1);	break;
-		case 0xb2: map_key_clear(KEY_NUMERIC_2);	break;
-		case 0xb3: map_key_clear(KEY_NUMERIC_3);	break;
-		case 0xb4: map_key_clear(KEY_NUMERIC_4);	break;
-		case 0xb5: map_key_clear(KEY_NUMERIC_5);	break;
-		case 0xb6: map_key_clear(KEY_NUMERIC_6);	break;
-		case 0xb7: map_key_clear(KEY_NUMERIC_7);	break;
-		case 0xb8: map_key_clear(KEY_NUMERIC_8);	break;
-		case 0xb9: map_key_clear(KEY_NUMERIC_9);	break;
-		case 0xba: map_key_clear(KEY_NUMERIC_STAR);	break;
-		case 0xbb: map_key_clear(KEY_NUMERIC_POUND);	break;
-		case 0xbc: map_key_clear(KEY_NUMERIC_A);	break;
-		case 0xbd: map_key_clear(KEY_NUMERIC_B);	break;
-		case 0xbe: map_key_clear(KEY_NUMERIC_C);	break;
-		case 0xbf: map_key_clear(KEY_NUMERIC_D);	break;
-		default: goto ignore;
 		}
 		break;
 
@@ -791,13 +675,6 @@ static void hidinput_configure_usage(struct hid_input *hidinput, struct hid_fiel
 		case 0x06b: map_key_clear(KEY_BLUE);		break;
 		case 0x06c: map_key_clear(KEY_YELLOW);		break;
 		case 0x06d: map_key_clear(KEY_ZOOM);		break;
-
-		case 0x06f: map_key_clear(KEY_BRIGHTNESSUP);		break;
-		case 0x070: map_key_clear(KEY_BRIGHTNESSDOWN);		break;
-		case 0x072: map_key_clear(KEY_BRIGHTNESS_TOGGLE);	break;
-		case 0x073: map_key_clear(KEY_BRIGHTNESS_MIN);		break;
-		case 0x074: map_key_clear(KEY_BRIGHTNESS_MAX);		break;
-		case 0x075: map_key_clear(KEY_BRIGHTNESS_AUTO);		break;
 
 		case 0x082: map_key_clear(KEY_VIDEO_NEXT);	break;
 		case 0x083: map_key_clear(KEY_LAST);		break;
@@ -839,7 +716,6 @@ static void hidinput_configure_usage(struct hid_input *hidinput, struct hid_fiel
 		case 0x0bf: map_key_clear(KEY_SLOW);		break;
 
 		case 0x0cd: map_key_clear(KEY_PLAYPAUSE);	break;
-		case 0x0cf: map_key_clear(KEY_VOICECOMMAND);	break;
 		case 0x0e0: map_abs_clear(ABS_VOLUME);		break;
 		case 0x0e2: map_key_clear(KEY_MUTE);		break;
 		case 0x0e5: map_key_clear(KEY_BASSBOOST);	break;
@@ -847,7 +723,6 @@ static void hidinput_configure_usage(struct hid_input *hidinput, struct hid_fiel
 		case 0x0ea: map_key_clear(KEY_VOLUMEDOWN);	break;
 		case 0x0f5: map_key_clear(KEY_SLOW);		break;
 
-		case 0x181: map_key_clear(KEY_BUTTONCONFIG);	break;
 		case 0x182: map_key_clear(KEY_BOOKMARKS);	break;
 		case 0x183: map_key_clear(KEY_CONFIG);		break;
 		case 0x184: map_key_clear(KEY_WORDPROCESSOR);	break;
@@ -861,8 +736,6 @@ static void hidinput_configure_usage(struct hid_input *hidinput, struct hid_fiel
 		case 0x18c: map_key_clear(KEY_VOICEMAIL);	break;
 		case 0x18d: map_key_clear(KEY_ADDRESSBOOK);	break;
 		case 0x18e: map_key_clear(KEY_CALENDAR);	break;
-		case 0x18f: map_key_clear(KEY_TASKMANAGER);	break;
-		case 0x190: map_key_clear(KEY_JOURNAL);		break;
 		case 0x191: map_key_clear(KEY_FINANCE);		break;
 		case 0x192: map_key_clear(KEY_CALC);		break;
 		case 0x193: map_key_clear(KEY_PLAYER);		break;
@@ -871,16 +744,10 @@ static void hidinput_configure_usage(struct hid_input *hidinput, struct hid_fiel
 		case 0x199: map_key_clear(KEY_CHAT);		break;
 		case 0x19c: map_key_clear(KEY_LOGOFF);		break;
 		case 0x19e: map_key_clear(KEY_COFFEE);		break;
-		case 0x19f: map_key_clear(KEY_CONTROLPANEL);		break;
-		case 0x1a2: map_key_clear(KEY_APPSELECT);		break;
-		case 0x1a3: map_key_clear(KEY_NEXT);		break;
-		case 0x1a4: map_key_clear(KEY_PREVIOUS);	break;
 		case 0x1a6: map_key_clear(KEY_HELP);		break;
 		case 0x1a7: map_key_clear(KEY_DOCUMENTS);	break;
 		case 0x1ab: map_key_clear(KEY_SPELLCHECK);	break;
 		case 0x1ae: map_key_clear(KEY_KEYBOARD);	break;
-		case 0x1b1: map_key_clear(KEY_SCREENSAVER);		break;
-		case 0x1b4: map_key_clear(KEY_FILE);		break;
 		case 0x1b6: map_key_clear(KEY_IMAGES);		break;
 		case 0x1b7: map_key_clear(KEY_AUDIO);		break;
 		case 0x1b8: map_key_clear(KEY_VIDEO);		break;
@@ -922,14 +789,7 @@ static void hidinput_configure_usage(struct hid_input *hidinput, struct hid_fiel
 		case 0x28b: map_key_clear(KEY_FORWARDMAIL);	break;
 		case 0x28c: map_key_clear(KEY_SEND);		break;
 
-		case 0x2c7: map_key_clear(KEY_KBDINPUTASSIST_PREV);		break;
-		case 0x2c8: map_key_clear(KEY_KBDINPUTASSIST_NEXT);		break;
-		case 0x2c9: map_key_clear(KEY_KBDINPUTASSIST_PREVGROUP);		break;
-		case 0x2ca: map_key_clear(KEY_KBDINPUTASSIST_NEXTGROUP);		break;
-		case 0x2cb: map_key_clear(KEY_KBDINPUTASSIST_ACCEPT);	break;
-		case 0x2cc: map_key_clear(KEY_KBDINPUTASSIST_CANCEL);	break;
-
-		default: map_key_clear(KEY_UNKNOWN);
+		default:    goto ignore;
 		}
 		break;
 
@@ -959,16 +819,6 @@ static void hidinput_configure_usage(struct hid_input *hidinput, struct hid_fiel
 		}
 		break;
 
-	case HID_UP_HPVENDOR2:
-		set_bit(EV_REP, input->evbit);
-		switch (usage->hid & HID_USAGE) {
-		case 0x001: map_key_clear(KEY_MICMUTE);		break;
-		case 0x003: map_key_clear(KEY_BRIGHTNESSDOWN);	break;
-		case 0x004: map_key_clear(KEY_BRIGHTNESSUP);	break;
-		default:    goto ignore;
-		}
-		break;
-
 	case HID_UP_MSVENDOR:
 		goto ignore;
 
@@ -977,10 +827,6 @@ static void hidinput_configure_usage(struct hid_input *hidinput, struct hid_fiel
 		goto ignore;
 
 	case HID_UP_LOGIVENDOR:
-		/* intentional fallback */
-	case HID_UP_LOGIVENDOR2:
-		/* intentional fallback */
-	case HID_UP_LOGIVENDOR3:
 		goto ignore;
 
 	case HID_UP_PID:
@@ -1149,49 +995,23 @@ void hidinput_hid_event(struct hid_device *hid, struct hid_field *field, struct 
 
 	/*
 	 * Ignore out-of-range values as per HID specification,
-	 * section 5.10 and 6.2.25.
-	 *
-	 * The logical_minimum < logical_maximum check is done so that we
-	 * don't unintentionally discard values sent by devices which
-	 * don't specify logical min and max.
+	 * section 5.10 and 6.2.25
 	 */
 	if ((field->flags & HID_MAIN_ITEM_VARIABLE) &&
-	    (field->logical_minimum < field->logical_maximum) &&
 	    (value < field->logical_minimum ||
 	     value > field->logical_maximum)) {
 		dbg_hid("Ignoring out-of-range value %x\n", value);
 		return;
 	}
 
-	/*
-	 * Ignore reports for absolute data if the data didn't change. This is
-	 * not only an optimization but also fixes 'dead' key reports. Some
-	 * RollOver implementations for localized keys (like BACKSLASH/PIPE; HID
-	 * 0x31 and 0x32) report multiple keys, even though a localized keyboard
-	 * can only have one of them physically available. The 'dead' keys
-	 * report constant 0. As all map to the same keycode, they'd confuse
-	 * the input layer. If we filter the 'dead' keys on the HID level, we
-	 * skip the keycode translation and only forward real events.
-	 */
-	if (!(field->flags & (HID_MAIN_ITEM_RELATIVE |
-	                      HID_MAIN_ITEM_BUFFERED_BYTE)) &&
-			      (field->flags & HID_MAIN_ITEM_VARIABLE) &&
-	    usage->usage_index < field->maxusage &&
-	    value == field->value[usage->usage_index])
-		return;
-
 	/* report the usage code as scancode if the key status has changed */
-	if (usage->type == EV_KEY &&
-	    (!test_bit(usage->code, input->key)) == value)
+	if (usage->type == EV_KEY && !!test_bit(usage->code, input->key) != value)
 		input_event(input, EV_MSC, MSC_SCAN, usage->hid);
 
 	input_event(input, usage->type, usage->code, value);
 
-	if ((field->flags & HID_MAIN_ITEM_RELATIVE) &&
-	    usage->type == EV_KEY && value) {
-		input_sync(input);
+	if ((field->flags & HID_MAIN_ITEM_RELATIVE) && (usage->type == EV_KEY))
 		input_event(input, usage->type, usage->code, 0);
-	}
 }
 
 void hidinput_report_event(struct hid_device *hid, struct hid_report *report)
@@ -1271,11 +1091,7 @@ static void hidinput_led_worker(struct work_struct *work)
 					      led_work);
 	struct hid_field *field;
 	struct hid_report *report;
-<<<<<<< HEAD
 	int len;
-=======
-	int len, ret;
->>>>>>> android-4.9
 	__u8 *buf;
 
 	field = hidinput_get_led_field(hid);
@@ -1297,31 +1113,14 @@ static void hidinput_led_worker(struct work_struct *work)
 
 	report = field->report;
 
-<<<<<<< HEAD
 	len = ((report->size - 1) >> 3) + 1 + (report->id > 0);
 	buf = kmalloc(len, GFP_KERNEL);
-=======
-	/* use custom SET_REPORT request if possible (asynchronous) */
-	if (hid->ll_driver->request)
-		return hid->ll_driver->request(hid, report, HID_REQ_SET_REPORT);
-
-	/* fall back to generic raw-output-report */
-	len = hid_report_len(report);
-	buf = hid_alloc_report_buf(report, GFP_KERNEL);
->>>>>>> android-4.9
 	if (!buf)
 		return;
 
 	hid_output_report(report, buf);
 	/* synchronous output report */
-<<<<<<< HEAD
 	hid->hid_output_raw_report(hid, buf, len, HID_OUTPUT_REPORT);
-=======
-	ret = hid_hw_output_report(hid, buf, len);
-	if (ret == -ENOSYS)
-		hid_hw_raw_request(hid, report->id, buf, len, HID_OUTPUT_REPORT,
-				HID_REQ_SET_REPORT);
->>>>>>> android-4.9
 	kfree(buf);
 }
 
@@ -1372,11 +1171,7 @@ static void report_features(struct hid_device *hid)
 
 	rep_enum = &hid->report_enum[HID_FEATURE_REPORT];
 	list_for_each_entry(rep, &rep_enum->report_list, list)
-		for (i = 0; i < rep->maxfield; i++) {
-			/* Ignore if report count is out of bounds. */
-			if (rep->field[i]->report_count < 1)
-				continue;
-
+		for (i = 0; i < rep->maxfield; i++)
 			for (j = 0; j < rep->field[i]->maxusage; j++) {
 				/* Verify if Battery Strength feature is available */
 				hidinput_setup_battery(hid, HID_FEATURE_REPORT, rep->field[i]);
@@ -1385,100 +1180,6 @@ static void report_features(struct hid_device *hid)
 					drv->feature_mapping(hid, rep->field[i],
 							     rep->field[i]->usage + j);
 			}
-		}
-}
-
-static struct hid_input *hidinput_allocate(struct hid_device *hid)
-{
-	struct hid_input *hidinput = kzalloc(sizeof(*hidinput), GFP_KERNEL);
-	struct input_dev *input_dev = input_allocate_device();
-	if (!hidinput || !input_dev) {
-		kfree(hidinput);
-		input_free_device(input_dev);
-		hid_err(hid, "Out of memory during hid input probe\n");
-		return NULL;
-	}
-
-	input_set_drvdata(input_dev, hid);
-	input_dev->event = hidinput_input_event;
-	input_dev->open = hidinput_open;
-	input_dev->close = hidinput_close;
-	input_dev->setkeycode = hidinput_setkeycode;
-	input_dev->getkeycode = hidinput_getkeycode;
-
-	input_dev->name = hid->name;
-	input_dev->phys = hid->phys;
-	input_dev->uniq = hid->uniq;
-	input_dev->id.bustype = hid->bus;
-	input_dev->id.vendor  = hid->vendor;
-	input_dev->id.product = hid->product;
-	input_dev->id.version = hid->version;
-	input_dev->dev.parent = &hid->dev;
-	hidinput->input = input_dev;
-	list_add_tail(&hidinput->list, &hid->inputs);
-
-	return hidinput;
-}
-
-static bool hidinput_has_been_populated(struct hid_input *hidinput)
-{
-	int i;
-	unsigned long r = 0;
-
-	for (i = 0; i < BITS_TO_LONGS(EV_CNT); i++)
-		r |= hidinput->input->evbit[i];
-
-	for (i = 0; i < BITS_TO_LONGS(KEY_CNT); i++)
-		r |= hidinput->input->keybit[i];
-
-	for (i = 0; i < BITS_TO_LONGS(REL_CNT); i++)
-		r |= hidinput->input->relbit[i];
-
-	for (i = 0; i < BITS_TO_LONGS(ABS_CNT); i++)
-		r |= hidinput->input->absbit[i];
-
-	for (i = 0; i < BITS_TO_LONGS(MSC_CNT); i++)
-		r |= hidinput->input->mscbit[i];
-
-	for (i = 0; i < BITS_TO_LONGS(LED_CNT); i++)
-		r |= hidinput->input->ledbit[i];
-
-	for (i = 0; i < BITS_TO_LONGS(SND_CNT); i++)
-		r |= hidinput->input->sndbit[i];
-
-	for (i = 0; i < BITS_TO_LONGS(FF_CNT); i++)
-		r |= hidinput->input->ffbit[i];
-
-	for (i = 0; i < BITS_TO_LONGS(SW_CNT); i++)
-		r |= hidinput->input->swbit[i];
-
-	return !!r;
-}
-
-static void hidinput_cleanup_hidinput(struct hid_device *hid,
-		struct hid_input *hidinput)
-{
-	struct hid_report *report;
-	int i, k;
-
-	list_del(&hidinput->list);
-	input_free_device(hidinput->input);
-
-	for (k = HID_INPUT_REPORT; k <= HID_OUTPUT_REPORT; k++) {
-		if (k == HID_OUTPUT_REPORT &&
-			hid->quirks & HID_QUIRK_SKIP_OUTPUT_REPORTS)
-			continue;
-
-		list_for_each_entry(report, &hid->report_enum[k].report_list,
-				    list) {
-
-			for (i = 0; i < report->maxfield; i++)
-				if (report->field[i]->hidinput == hidinput)
-					report->field[i]->hidinput = NULL;
-		}
-	}
-
-	kfree(hidinput);
 }
 
 /*
@@ -1489,9 +1190,9 @@ static void hidinput_cleanup_hidinput(struct hid_device *hid,
 
 int hidinput_connect(struct hid_device *hid, unsigned int force)
 {
-	struct hid_driver *drv = hid->driver;
 	struct hid_report *report;
 	struct hid_input *hidinput = NULL;
+	struct input_dev *input_dev;
 	int i, j, k;
 
 	INIT_LIST_HEAD(&hid->inputs);
@@ -1523,10 +1224,13 @@ int hidinput_connect(struct hid_device *hid, unsigned int force)
 				continue;
 
 			if (!hidinput) {
-				hidinput = hidinput_allocate(hid);
-				if (!hidinput)
+				hidinput = kzalloc(sizeof(*hidinput), GFP_KERNEL);
+				input_dev = input_allocate_device();
+				if (!hidinput || !input_dev) {
+					kfree(hidinput);
+					input_free_device(input_dev);
+					hid_err(hid, "Out of memory during hid input probe\n");
 					goto out_unwind;
-<<<<<<< HEAD
 				}
 
 				input_set_drvdata(input_dev, hid);
@@ -1552,18 +1256,12 @@ int hidinput_connect(struct hid_device *hid, unsigned int force)
 				input_dev->dev.parent = hid->dev.parent;
 				hidinput->input = input_dev;
 				list_add_tail(&hidinput->list, &hid->inputs);
-=======
->>>>>>> android-4.9
 			}
 
 			for (i = 0; i < report->maxfield; i++)
 				for (j = 0; j < report->field[i]->maxusage; j++)
 					hidinput_configure_usage(hidinput, report->field[i],
 								 report->field[i]->usage + j);
-
-			if ((hid->quirks & HID_QUIRK_NO_EMPTY_INPUT) &&
-			    !hidinput_has_been_populated(hidinput))
-				continue;
 
 			if (hid->quirks & HID_QUIRK_MULTI_INPUT) {
 				/* This will leave hidinput NULL, so that it
@@ -1572,13 +1270,8 @@ int hidinput_connect(struct hid_device *hid, unsigned int force)
 				 * UGCI) cram a lot of unrelated inputs into the
 				 * same interface. */
 				hidinput->report = report;
-<<<<<<< HEAD
 				if (hid->driver->input_register &&
 						hid->driver->input_register(hid, hidinput))
-=======
-				if (drv->input_configured &&
-				    drv->input_configured(hid, hidinput))
->>>>>>> android-4.9
 					goto out_cleanup;
 				if (input_register_device(hidinput->input))
 					goto out_cleanup;
@@ -1587,34 +1280,19 @@ int hidinput_connect(struct hid_device *hid, unsigned int force)
 		}
 	}
 
-	if (hidinput && (hid->quirks & HID_QUIRK_NO_EMPTY_INPUT) &&
-	    !hidinput_has_been_populated(hidinput)) {
-		/* no need to register an input device not populated */
-		hidinput_cleanup_hidinput(hid, hidinput);
-		hidinput = NULL;
-	}
-
-	if (list_empty(&hid->inputs)) {
-		hid_err(hid, "No inputs registered, leaving\n");
+	if (hid->quirks & HID_QUIRK_MULTITOUCH) {
+		/* generic hid does not know how to handle multitouch devices */
+		if (hidinput)
+			goto out_cleanup;
 		goto out_unwind;
 	}
 
-<<<<<<< HEAD
 	if (hidinput && hid->driver->input_register &&
 			hid->driver->input_register(hid, hidinput))
 		goto out_cleanup;
 
 	if (hidinput && input_register_device(hidinput->input))
 		goto out_cleanup;
-=======
-	if (hidinput) {
-		if (drv->input_configured &&
-		    drv->input_configured(hid, hidinput))
-			goto out_cleanup;
-		if (input_register_device(hidinput->input))
-			goto out_cleanup;
-	}
->>>>>>> android-4.9
 
 	return 0;
 

@@ -41,7 +41,7 @@
 #include <linux/fs.h>
 #include <linux/ioctl.h>
 #include <linux/init.h>
-#include <linux/io.h>
+#include <asm/io.h>
 
 #include <linux/mtd/mtd.h>
 
@@ -240,7 +240,7 @@ static int parse_cmdline(char *devname, char *szstart, char *szlength)
 
 	if (*(szlength) != '+') {
 		devlength = simple_strtoul(szlength, &buffer, 0);
-		devlength = handle_unit(devlength, buffer);
+		devlength = handle_unit(devlength, buffer) - devstart;
 		if (devlength < devstart)
 			goto err_out;
 
@@ -280,10 +280,13 @@ __setup("slram=", mtd_slram_setup);
 static int __init init_slram(void)
 {
 	char *devname;
+	int i;
 
 #ifndef MODULE
 	char *devstart;
 	char *devlength;
+
+	i = 0;
 
 	if (!map) {
 		E("slram: not enough parameters.\n");
@@ -311,7 +314,6 @@ static int __init init_slram(void)
 	}
 #else
 	int count;
-	int i;
 
 	for (count = 0; count < SLRAM_MAX_DEVICES_PARAMS && map[count];
 			count++) {

@@ -23,7 +23,6 @@
 static int sdcardfs_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 	int err;
-<<<<<<< HEAD
 	struct file *file, *lower_file;
 	const struct vm_operations_struct *lower_vm_ops;
 	struct vm_area_struct lower_vma;
@@ -75,71 +74,9 @@ static ssize_t sdcardfs_direct_IO(int rw, struct kiocb *iocb,
  */
 const struct address_space_operations sdcardfs_aops = {
 	/* empty on purpose */
-=======
-	struct file *file;
-	const struct vm_operations_struct *lower_vm_ops;
-
-	file = (struct file *)vma->vm_private_data;
-	lower_vm_ops = SDCARDFS_F(file)->lower_vm_ops;
-	BUG_ON(!lower_vm_ops);
-
-	err = lower_vm_ops->fault(vma, vmf);
-	return err;
-}
-
-static void sdcardfs_vm_open(struct vm_area_struct *vma)
-{
-	struct file *file = (struct file *)vma->vm_private_data;
-
-	get_file(file);
-}
-
-static void sdcardfs_vm_close(struct vm_area_struct *vma)
-{
-	struct file *file = (struct file *)vma->vm_private_data;
-
-	fput(file);
-}
-
-static int sdcardfs_page_mkwrite(struct vm_area_struct *vma,
-			       struct vm_fault *vmf)
-{
-	int err = 0;
-	struct file *file;
-	const struct vm_operations_struct *lower_vm_ops;
-
-	file = (struct file *)vma->vm_private_data;
-	lower_vm_ops = SDCARDFS_F(file)->lower_vm_ops;
-	BUG_ON(!lower_vm_ops);
-	if (!lower_vm_ops->page_mkwrite)
-		goto out;
-
-	err = lower_vm_ops->page_mkwrite(vma, vmf);
-out:
-	return err;
-}
-
-static ssize_t sdcardfs_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
-{
-	/*
-	 * This function should never be called directly.  We need it
-	 * to exist, to get past a check in open_check_o_direct(),
-	 * which is called from do_last().
-	 */
-	return -EINVAL;
-}
-
-const struct address_space_operations sdcardfs_aops = {
->>>>>>> android-4.9
 	.direct_IO	= sdcardfs_direct_IO,
 };
 
 const struct vm_operations_struct sdcardfs_vm_ops = {
 	.fault		= sdcardfs_fault,
-<<<<<<< HEAD
-=======
-	.page_mkwrite	= sdcardfs_page_mkwrite,
-	.open		= sdcardfs_vm_open,
-	.close		= sdcardfs_vm_close,
->>>>>>> android-4.9
 };

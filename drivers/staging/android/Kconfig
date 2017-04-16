@@ -1,19 +1,28 @@
 menu "Android"
 
+config ANDROID
+	bool "Android Drivers"
+	default N
+	---help---
+	  Enable support for various drivers needed on the Android platform
+
 if ANDROID
+
+config ANDROID_BINDER_IPC
+	bool "Android Binder IPC Driver"
+	default n
 
 config ASHMEM
 	bool "Enable the Anonymous Shared Memory Subsystem"
 	default n
-	depends on SHMEM
-	---help---
+	depends on SHMEM || TINY_SHMEM
+	help
 	  The ashmem subsystem is a new shared memory allocator, similar to
 	  POSIX SHM but with different behavior and sporting a simpler
 	  file-based API.
 
 	  It is, in theory, a good memory allocator for low-memory devices,
 	  because it can discard shared memory units when under memory pressure.
-<<<<<<< HEAD
 
 config ANDROID_PERSISTENT_RAM
 	bool
@@ -50,22 +59,13 @@ config ANDROID_TIMED_GPIO
 	tristate "Android timed gpio driver"
 	depends on GENERIC_GPIO && ANDROID_TIMED_OUTPUT
 	default n
-=======
->>>>>>> android-4.9
 
 config ANDROID_LOW_MEMORY_KILLER
 	bool "Android Low Memory Killer"
+	default N
 	---help---
-	  Registers processes to be killed when low memory conditions, this is useful
-	  as there is no particular swap space on android.
+	  Register processes to be killed when memory is low
 
-<<<<<<< HEAD
-=======
-	  The registered process will kill according to the priorities in android init
-	  scripts (/init.rc), and it defines priority values with minimum free memory size
-	  for each priority.
-
->>>>>>> android-4.9
 config ANDROID_LOW_MEMORY_KILLER_AUTODETECT_OOM_ADJ_VALUES
 	bool "Android Low Memory Killer: detect oom_adj values"
 	depends on ANDROID_LOW_MEMORY_KILLER
@@ -75,13 +75,7 @@ config ANDROID_LOW_MEMORY_KILLER_AUTODETECT_OOM_ADJ_VALUES
 	  /sys/module/lowmemorykiller/parameters/adj and convert them
 	  to oom_score_adj values.
 
-<<<<<<< HEAD
 source "drivers/staging/android/switch/Kconfig"
-=======
-source "drivers/staging/android/ion/Kconfig"
-
-source "drivers/staging/android/fiq_debugger/Kconfig"
->>>>>>> android-4.9
 
 endif # if ANDROID
 
