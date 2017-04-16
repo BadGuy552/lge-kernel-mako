@@ -206,12 +206,20 @@ static void pppolac_xmit_core(struct work_struct *delivery_work)
 	while ((skb = skb_dequeue(&delivery_queue))) {
 		struct sock *sk_udp = skb->sk;
 		struct kvec iov = {.iov_base = skb->data, .iov_len = skb->len};
+<<<<<<< HEAD
 		struct msghdr msg = {
 			.msg_iov = (struct iovec *)&iov,
 			.msg_iovlen = 1,
 			.msg_flags = MSG_NOSIGNAL | MSG_DONTWAIT,
 		};
 		sk_udp->sk_prot->sendmsg(NULL, sk_udp, &msg, skb->len);
+=======
+		struct msghdr msg = { 0 };
+
+		iov_iter_kvec(&msg.msg_iter, WRITE | ITER_KVEC, &iov, 1,
+			      skb->len);
+		sk_udp->sk_prot->sendmsg(sk_udp, &msg, skb->len);
+>>>>>>> android-4.9
 		kfree_skb(skb);
 	}
 	set_fs(old_fs);
@@ -396,11 +404,19 @@ static struct proto_ops pppolac_proto_ops = {
 	.mmap = sock_no_mmap,
 };
 
+<<<<<<< HEAD
 static int pppolac_create(struct net *net, struct socket *sock)
 {
 	struct sock *sk;
 
 	sk = sk_alloc(net, PF_PPPOX, GFP_KERNEL, &pppolac_proto);
+=======
+static int pppolac_create(struct net *net, struct socket *sock, int kern)
+{
+	struct sock *sk;
+
+	sk = sk_alloc(net, PF_PPPOX, GFP_KERNEL, &pppolac_proto, kern);
+>>>>>>> android-4.9
 	if (!sk)
 		return -ENOMEM;
 

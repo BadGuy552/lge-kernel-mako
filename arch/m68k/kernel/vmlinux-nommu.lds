@@ -45,6 +45,7 @@ SECTIONS {
 		HEAD_TEXT
 		TEXT_TEXT
 		SCHED_TEXT
+		CPUIDLE_TEXT
 		LOCK_TEXT
 		*(.fixup)
 		. = ALIGN(16);
@@ -78,9 +79,7 @@ SECTIONS {
 		__init_end = .;
 	}
 
-	_sbss = .;
 	BSS_SECTION(0, 0, 0)
-	_ebss = .;
 
 	_end = .;
 

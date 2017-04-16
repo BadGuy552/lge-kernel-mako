@@ -1,7 +1,7 @@
 /*
  *  Video for Linux Two header file
  *
- *  Copyright (C) 1999-2007 the contributors
+ *  Copyright (C) 1999-2012 the contributors
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -46,7 +46,7 @@
  * All kernel-specific stuff were moved to media/v4l2-dev.h, so
  * no #if __KERNEL tests are allowed here
  *
- *	See http://linuxtv.org for more info
+ *	See https://linuxtv.org for more info
  *
  *	Author: Bill Dirks <bill@thedirks.org>
  *		Justin Schoeman
@@ -56,8 +56,8 @@
 #ifndef __LINUX_VIDEODEV2_H
 #define __LINUX_VIDEODEV2_H
 
-#ifdef __KERNEL__
 #include <linux/time.h>     /* need struct timeval */
+<<<<<<< HEAD
 #else
 #include <sys/time.h>
 #endif
@@ -2585,5 +2585,8 @@ struct v4l2_create_buffers {
    drivers/media/video/v4l2-compat-ioctl32.c as well! */
 
 #define BASE_VIDIOC_PRIVATE	192		/* 192-255 are private */
+=======
+#include <uapi/linux/videodev2.h>
+>>>>>>> android-4.9
 
 #endif /* __LINUX_VIDEODEV2_H */

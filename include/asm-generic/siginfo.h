@@ -1,9 +1,9 @@
 #ifndef _ASM_GENERIC_SIGINFO_H
 #define _ASM_GENERIC_SIGINFO_H
 
-#include <linux/compiler.h>
-#include <linux/types.h>
+#include <uapi/asm-generic/siginfo.h>
 
+<<<<<<< HEAD
 typedef union sigval {
 	int sival_int;
 	void __user *sival_ptr;
@@ -140,6 +140,8 @@ typedef struct siginfo {
 #endif
 
 #ifdef __KERNEL__
+=======
+>>>>>>> android-4.9
 #define __SI_MASK	0xffff0000u
 #define __SI_KILL	(0 << 16)
 #define __SI_TIMER	(1 << 16)
@@ -150,6 +152,7 @@ typedef struct siginfo {
 #define __SI_MESGQ	(6 << 16)
 #define __SI_SYS	(7 << 16)
 #define __SI_CODE(T,N)	((T) | ((N) & 0xffff))
+<<<<<<< HEAD
 #else
 #define __SI_KILL	0
 #define __SI_TIMER	0
@@ -306,27 +309,12 @@ typedef struct sigevent {
 #define sigev_notify_thread_id	 _sigev_un._tid
 
 #ifdef __KERNEL__
+=======
+>>>>>>> android-4.9
 
 struct siginfo;
 void do_schedule_next_timer(struct siginfo *info);
 
-#ifndef HAVE_ARCH_COPY_SIGINFO
-
-#include <linux/string.h>
-
-static inline void copy_siginfo(struct siginfo *to, struct siginfo *from)
-{
-	if (from->si_code < 0)
-		memcpy(to, from, sizeof(*to));
-	else
-		/* _sigchld is currently the largest know union member */
-		memcpy(to, from, __ARCH_SI_PREAMBLE_SIZE + sizeof(from->_sifields._sigchld));
-}
-
-#endif
-
-extern int copy_siginfo_to_user(struct siginfo __user *to, struct siginfo *from);
-
-#endif /* __KERNEL__ */
+extern int copy_siginfo_to_user(struct siginfo __user *to, const struct siginfo *from);
 
 #endif

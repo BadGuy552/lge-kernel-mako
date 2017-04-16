@@ -1,11 +1,14 @@
 /* Bluetooth HCI driver model support. */
 
+<<<<<<< HEAD
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/init.h>
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
 #include <linux/interrupt.h>
+=======
+>>>>>>> android-4.9
 #include <linux/module.h>
 
 #include <net/bluetooth/bluetooth.h>
@@ -13,6 +16,7 @@
 
 static struct class *bt_class;
 
+<<<<<<< HEAD
 struct dentry *bt_debugfs;
 EXPORT_SYMBOL_GPL(bt_debugfs);
 
@@ -76,6 +80,8 @@ static const struct attribute_group *bt_link_groups[] = {
 	NULL
 };
 
+=======
+>>>>>>> android-4.9
 static void bt_link_release(struct device *dev)
 {
 	void *data = dev_get_drvdata(dev);
@@ -84,7 +90,6 @@ static void bt_link_release(struct device *dev)
 
 static struct device_type bt_link = {
 	.name    = "link",
-	.groups  = bt_link_groups,
 	.release = bt_link_release,
 };
 
@@ -134,11 +139,11 @@ static void del_conn(struct work_struct *work)
 	}
 
 	device_del(&conn->dev);
-	put_device(&conn->dev);
 
 	hci_dev_put(hdev);
 }
 
+<<<<<<< HEAD
 void hci_conn_init_sysfs(struct hci_conn *conn)
 {
 	struct hci_dev *hdev = conn->hdev;
@@ -385,6 +390,8 @@ static const struct attribute_group *bt_host_groups[] = {
 	NULL
 };
 
+=======
+>>>>>>> android-4.9
 static void bt_host_release(struct device *dev)
 {
 	void *data = dev_get_drvdata(dev);
@@ -393,10 +400,10 @@ static void bt_host_release(struct device *dev)
 
 static struct device_type bt_host = {
 	.name    = "host",
-	.groups  = bt_host_groups,
 	.release = bt_host_release,
 };
 
+<<<<<<< HEAD
 static int inquiry_cache_show(struct seq_file *f, void *p)
 {
 	struct hci_dev *hdev = f->private;
@@ -558,22 +565,27 @@ void hci_unregister_sysfs(struct hci_dev *hdev)
 	debugfs_remove_recursive(hdev->debugfs);
 
 	device_del(&hdev->dev);
+=======
+void hci_init_sysfs(struct hci_dev *hdev)
+{
+	struct device *dev = &hdev->dev;
+
+	dev->type = &bt_host;
+	dev->class = bt_class;
+
+	__module_get(THIS_MODULE);
+	device_initialize(dev);
+>>>>>>> android-4.9
 }
 
 int __init bt_sysfs_init(void)
 {
-	bt_debugfs = debugfs_create_dir("bluetooth", NULL);
-
 	bt_class = class_create(THIS_MODULE, "bluetooth");
-	if (IS_ERR(bt_class))
-		return PTR_ERR(bt_class);
 
-	return 0;
+	return PTR_ERR_OR_ZERO(bt_class);
 }
 
 void bt_sysfs_cleanup(void)
 {
 	class_destroy(bt_class);
-
-	debugfs_remove_recursive(bt_debugfs);
 }

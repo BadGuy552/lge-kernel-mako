@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 menuconfig POWER_SUPPLY
 	tristate "Power supply class support"
 	help
@@ -467,3 +468,8 @@ config BATTERY_ASUS_BQ27541
 	  Say Y here to enable support for batteries with BQ27541 chip.
 
 endif # POWER_SUPPLY
+=======
+source "drivers/power/avs/Kconfig"
+source "drivers/power/reset/Kconfig"
+source "drivers/power/supply/Kconfig"
+>>>>>>> android-4.9

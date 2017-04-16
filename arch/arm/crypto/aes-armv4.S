@@ -35,6 +35,10 @@
 @ that is being targetted.
 
 #include <linux/linkage.h>
+<<<<<<< HEAD
+=======
+#include <asm/assembler.h>
+>>>>>>> android-4.9
 
 .text
 
@@ -648,7 +652,11 @@ _armv4_AES_set_encrypt_key:
 
 .Ldone:	mov	r0,#0
 	ldmia   sp!,{r4-r12,lr}
+<<<<<<< HEAD
 .Labrt:	mov	pc,lr
+=======
+.Labrt:	ret	lr
+>>>>>>> android-4.9
 ENDPROC(private_AES_set_encrypt_key)
 
 .align	5

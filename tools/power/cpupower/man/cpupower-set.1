@@ -3,7 +3,7 @@
 cpupower\-set \- Set processor power related kernel or hardware configurations
 .SH SYNOPSIS
 .ft B
-.B cpupower set [ \-b VAL ] [ \-s VAL ] [ \-m VAL ]
+.B cpupower set [ \-b VAL ]
 
 
 .SH DESCRIPTION
@@ -55,6 +55,7 @@ Use \fBcpupower -c all info -b\fP to verify.
 
 This options needs the msr kernel driver (CONFIG_X86_MSR) loaded.
 .RE
+<<<<<<< HEAD
 .PP
 \-\-sched\-mc,  \-m [ VAL ]
 .RE
@@ -84,6 +85,8 @@ Possible values are:
 2 - Also bias task wakeups to semi-idle cpu package for power
 savings
 .RE
+=======
+>>>>>>> android-4.9
 
 .SH "SEE ALSO"
 cpupower-info(1), cpupower-monitor(1), powertop(1)

@@ -28,11 +28,14 @@
 
 /* SCO defaults */
 #define SCO_DEFAULT_MTU		500
+<<<<<<< HEAD
 #define SCO_DEFAULT_FLUSH_TO	0xFFFF
 
 #define SCO_CONN_TIMEOUT	(HZ * 40)
 #define SCO_DISCONN_TIMEOUT	(HZ * 20)
 #define SCO_CONN_IDLE_TIMEOUT	(HZ * 60)
+=======
+>>>>>>> android-4.9
 
 /* SCO socket address */
 struct sockaddr_sco {
@@ -54,6 +57,7 @@ struct sco_conninfo {
 	__u8  dev_class[3];
 };
 
+<<<<<<< HEAD
 /* ---- SCO connections ---- */
 struct sco_conn {
 	struct hci_conn	*hcon;
@@ -80,4 +84,6 @@ struct sco_pinfo {
 	struct sco_conn	*conn;
 };
 
+=======
+>>>>>>> android-4.9
 #endif /* __SCO_H */

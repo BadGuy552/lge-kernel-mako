@@ -3,12 +3,12 @@
  * Licensed under the GPL
  */
 
-#include "linux/init.h"
-#include "linux/bootmem.h"
-#include "linux/initrd.h"
-#include "asm/types.h"
-#include "init.h"
-#include "os.h"
+#include <linux/init.h>
+#include <linux/bootmem.h>
+#include <linux/initrd.h>
+#include <asm/types.h>
+#include <init.h>
+#include <os.h>
 
 /* Changed by uml_initrd_setup, which is a setup */
 static char *initrd __initdata = NULL;
@@ -37,8 +37,6 @@ static int __init read_initrd(void)
 	}
 
 	area = alloc_bootmem(size);
-	if (area == NULL)
-		return 0;
 
 	if (load_initrd(initrd, area, size) == -1)
 		return 0;

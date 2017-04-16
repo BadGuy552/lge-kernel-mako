@@ -178,13 +178,18 @@ server_in_two_cells:
 /*
  * look up a server by its IP address
  */
-struct afs_server *afs_find_server(const struct in_addr *_addr)
+struct afs_server *afs_find_server(const struct sockaddr_rxrpc *srx)
 {
 	struct afs_server *server = NULL;
 	struct rb_node *p;
-	struct in_addr addr = *_addr;
+	struct in_addr addr = srx->transport.sin.sin_addr;
 
-	_enter("%pI4", &addr.s_addr);
+	_enter("{%d,%pI4}", srx->transport.family, &addr.s_addr);
+
+	if (srx->transport.family != AF_INET) {
+		WARN(true, "AFS does not yes support non-IPv4 addresses\n");
+		return NULL;
+	}
 
 	read_lock(&afs_servers_lock);
 
@@ -285,12 +290,7 @@ static void afs_reap_server(struct work_struct *work)
 		expiry = server->time_of_death + afs_server_timeout;
 		if (expiry > now) {
 			delay = (expiry - now) * HZ;
-			if (!queue_delayed_work(afs_wq, &afs_server_reaper,
-						delay)) {
-				cancel_delayed_work(&afs_server_reaper);
-				queue_delayed_work(afs_wq, &afs_server_reaper,
-						   delay);
-			}
+			mod_delayed_work(afs_wq, &afs_server_reaper, delay);
 			break;
 		}
 
@@ -323,6 +323,5 @@ static void afs_reap_server(struct work_struct *work)
 void __exit afs_purge_servers(void)
 {
 	afs_server_timeout = 0;
-	cancel_delayed_work(&afs_server_reaper);
-	queue_delayed_work(afs_wq, &afs_server_reaper, 0);
+	mod_delayed_work(afs_wq, &afs_server_reaper, 0);
 }

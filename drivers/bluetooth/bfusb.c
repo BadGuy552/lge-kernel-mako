@@ -42,7 +42,7 @@
 
 static struct usb_driver bfusb_driver;
 
-static struct usb_device_id bfusb_table[] = {
+static const struct usb_device_id bfusb_table[] = {
 	/* AVM BlueFRITZ! USB */
 	{ USB_DEVICE(0x057c, 0x2200) },
 
@@ -131,8 +131,11 @@ static int bfusb_send_bulk(struct bfusb_data *data, struct sk_buff *skb)
 
 	BT_DBG("bfusb %p skb %p len %d", data, skb, skb->len);
 
-	if (!urb && !(urb = usb_alloc_urb(0, GFP_ATOMIC)))
-		return -ENOMEM;
+	if (!urb) {
+		urb = usb_alloc_urb(0, GFP_ATOMIC);
+		if (!urb)
+			return -ENOMEM;
+	}
 
 	pipe = usb_sndbulkpipe(data->udev, data->bulk_out_ep);
 
@@ -218,8 +221,11 @@ static int bfusb_rx_submit(struct bfusb_data *data, struct urb *urb)
 
 	BT_DBG("bfusb %p urb %p", data, urb);
 
-	if (!urb && !(urb = usb_alloc_urb(0, GFP_ATOMIC)))
-		return -ENOMEM;
+	if (!urb) {
+		urb = usb_alloc_urb(0, GFP_ATOMIC);
+		if (!urb)
+			return -ENOMEM;
+	}
 
 	skb = bt_skb_alloc(size, GFP_ATOMIC);
 	if (!skb) {
@@ -318,8 +324,7 @@ static inline int bfusb_recv_block(struct bfusb_data *data, int hdr, unsigned ch
 			return -ENOMEM;
 		}
 
-		skb->dev = (void *) data->hdev;
-		bt_cb(skb)->pkt_type = pkt_type;
+		hci_skb_pkt_type(skb) = pkt_type;
 
 		data->reassembly = skb;
 	} else {
@@ -333,7 +338,7 @@ static inline int bfusb_recv_block(struct bfusb_data *data, int hdr, unsigned ch
 		memcpy(skb_put(data->reassembly, len), buf, len);
 
 	if (hdr & 0x08) {
-		hci_recv_frame(data->reassembly);
+		hci_recv_frame(data->hdev, data->reassembly);
 		data->reassembly = NULL;
 	}
 
@@ -417,17 +422,12 @@ static int bfusb_open(struct hci_dev *hdev)
 
 	BT_DBG("hdev %p bfusb %p", hdev, data);
 
-	if (test_and_set_bit(HCI_RUNNING, &hdev->flags))
-		return 0;
-
 	write_lock_irqsave(&data->lock, flags);
 
 	err = bfusb_rx_submit(data, NULL);
 	if (!err) {
 		for (i = 1; i < BFUSB_MAX_BULK_RX; i++)
 			bfusb_rx_submit(data, NULL);
-	} else {
-		clear_bit(HCI_RUNNING, &hdev->flags);
 	}
 
 	write_unlock_irqrestore(&data->lock, flags);
@@ -453,9 +453,6 @@ static int bfusb_close(struct hci_dev *hdev)
 
 	BT_DBG("hdev %p bfusb %p", hdev, data);
 
-	if (!test_and_clear_bit(HCI_RUNNING, &hdev->flags))
-		return 0;
-
 	write_lock_irqsave(&data->lock, flags);
 	write_unlock_irqrestore(&data->lock, flags);
 
@@ -465,14 +462,14 @@ static int bfusb_close(struct hci_dev *hdev)
 	return 0;
 }
 
-static int bfusb_send_frame(struct sk_buff *skb)
+static int bfusb_send_frame(struct hci_dev *hdev, struct sk_buff *skb)
 {
-	struct hci_dev *hdev = (struct hci_dev *) skb->dev;
-	struct bfusb_data *data;
+	struct bfusb_data *data = hci_get_drvdata(hdev);
 	struct sk_buff *nskb;
 	unsigned char buf[3];
 	int sent = 0, size, count;
 
+<<<<<<< HEAD
 	BT_DBG("hdev %p skb %p type %d len %d", hdev, skb, bt_cb(skb)->pkt_type, skb->len);
 
 	if (!hdev) {
@@ -484,8 +481,12 @@ static int bfusb_send_frame(struct sk_buff *skb)
 		return -EBUSY;
 
 	data = hdev->driver_data;
+=======
+	BT_DBG("hdev %p skb %p type %d len %d", hdev, skb,
+	       hci_skb_pkt_type(skb), skb->len);
+>>>>>>> android-4.9
 
-	switch (bt_cb(skb)->pkt_type) {
+	switch (hci_skb_pkt_type(skb)) {
 	case HCI_COMMAND_PKT:
 		hdev->stat.cmd_tx++;
 		break;
@@ -495,10 +496,10 @@ static int bfusb_send_frame(struct sk_buff *skb)
 	case HCI_SCODATA_PKT:
 		hdev->stat.sco_tx++;
 		break;
-	};
+	}
 
 	/* Prepend skb with frame type */
-	memcpy(skb_push(skb, 1), &bt_cb(skb)->pkt_type, 1);
+	memcpy(skb_push(skb, 1), &hci_skb_pkt_type(skb), 1);
 
 	count = skb->len;
 
@@ -544,6 +545,7 @@ static int bfusb_send_frame(struct sk_buff *skb)
 	return 0;
 }
 
+<<<<<<< HEAD
 static void bfusb_destruct(struct hci_dev *hdev)
 {
 	struct bfusb_data *data = hdev->driver_data;
@@ -558,6 +560,8 @@ static int bfusb_ioctl(struct hci_dev *hdev, unsigned int cmd, unsigned long arg
 	return -ENOIOCTLCMD;
 }
 
+=======
+>>>>>>> android-4.9
 static int bfusb_load_firmware(struct bfusb_data *data,
 			       const unsigned char *firmware, int count)
 {
@@ -661,11 +665,9 @@ static int bfusb_probe(struct usb_interface *intf, const struct usb_device_id *i
 	}
 
 	/* Initialize control structure and load firmware */
-	data = kzalloc(sizeof(struct bfusb_data), GFP_KERNEL);
-	if (!data) {
-		BT_ERR("Can't allocate memory for control structure");
-		goto done;
-	}
+	data = devm_kzalloc(&intf->dev, sizeof(struct bfusb_data), GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
 
 	data->udev = udev;
 	data->bulk_in_ep    = bulk_in_ep->desc.bEndpointAddress;
@@ -682,7 +684,7 @@ static int bfusb_probe(struct usb_interface *intf, const struct usb_device_id *i
 
 	if (request_firmware(&firmware, "bfubase.frm", &udev->dev) < 0) {
 		BT_ERR("Firmware request failed");
-		goto error;
+		goto done;
 	}
 
 	BT_DBG("firmware data %p size %zu", firmware->data, firmware->size);
@@ -698,7 +700,7 @@ static int bfusb_probe(struct usb_interface *intf, const struct usb_device_id *i
 	hdev = hci_alloc_dev();
 	if (!hdev) {
 		BT_ERR("Can't allocate HCI device");
-		goto error;
+		goto done;
 	}
 
 	data->hdev = hdev;
@@ -707,19 +709,28 @@ static int bfusb_probe(struct usb_interface *intf, const struct usb_device_id *i
 	hdev->driver_data = data;
 	SET_HCIDEV_DEV(hdev, &intf->dev);
 
+<<<<<<< HEAD
 	hdev->open     = bfusb_open;
 	hdev->close    = bfusb_close;
 	hdev->flush    = bfusb_flush;
 	hdev->send     = bfusb_send_frame;
 	hdev->destruct = bfusb_destruct;
 	hdev->ioctl    = bfusb_ioctl;
+=======
+	hdev->open  = bfusb_open;
+	hdev->close = bfusb_close;
+	hdev->flush = bfusb_flush;
+	hdev->send  = bfusb_send_frame;
+
+	set_bit(HCI_QUIRK_BROKEN_LOCAL_COMMANDS, &hdev->quirks);
+>>>>>>> android-4.9
 
 	hdev->owner = THIS_MODULE;
 
 	if (hci_register_dev(hdev) < 0) {
 		BT_ERR("Can't register HCI device");
 		hci_free_dev(hdev);
-		goto error;
+		goto done;
 	}
 
 	usb_set_intfdata(intf, data);
@@ -728,9 +739,6 @@ static int bfusb_probe(struct usb_interface *intf, const struct usb_device_id *i
 
 release:
 	release_firmware(firmware);
-
-error:
-	kfree(data);
 
 done:
 	return -EIO;
@@ -761,6 +769,7 @@ static struct usb_driver bfusb_driver = {
 	.probe		= bfusb_probe,
 	.disconnect	= bfusb_disconnect,
 	.id_table	= bfusb_table,
+	.disable_hub_initiated_lpm = 1,
 };
 
 static int __init bfusb_init(void)

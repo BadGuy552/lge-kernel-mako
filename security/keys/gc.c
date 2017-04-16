@@ -62,7 +62,7 @@ void key_schedule_gc(time_t gc_at)
 
 	if (gc_at <= now || test_bit(KEY_GC_REAP_KEYTYPE, &key_gc_flags)) {
 		kdebug("IMMEDIATE");
-		queue_work(system_nrt_wq, &key_gc_work);
+		schedule_work(&key_gc_work);
 	} else if (gc_at < key_gc_next_run) {
 		kdebug("DEFERRED");
 		key_gc_next_run = gc_at;
@@ -73,11 +73,30 @@ void key_schedule_gc(time_t gc_at)
 
 /*
  * Schedule a dead links collection run.
+<<<<<<< HEAD
  */
 void key_schedule_gc_links(void)
 {
 	set_bit(KEY_GC_KEY_EXPIRED, &key_gc_flags);
 	queue_work(system_nrt_wq, &key_gc_work);
+}
+
+/*
+ * Some key's cleanup time was met after it expired, so we need to get the
+ * reaper to go through a cycle finding expired keys.
+=======
+>>>>>>> android-4.9
+ */
+void key_schedule_gc_links(void)
+{
+<<<<<<< HEAD
+	kenter("");
+	key_gc_next_run = LONG_MAX;
+	key_schedule_gc_links();
+=======
+	set_bit(KEY_GC_KEY_EXPIRED, &key_gc_flags);
+	schedule_work(&key_gc_work);
+>>>>>>> android-4.9
 }
 
 /*
@@ -89,15 +108,6 @@ static void key_gc_timer_func(unsigned long data)
 	kenter("");
 	key_gc_next_run = LONG_MAX;
 	key_schedule_gc_links();
-}
-
-/*
- * wait_on_bit() sleep function for uninterruptible waiting
- */
-static int key_gc_wait_bit(void *flags)
-{
-	schedule();
-	return 0;
 }
 
 /*
@@ -120,10 +130,10 @@ void key_gc_keytype(struct key_type *ktype)
 	set_bit(KEY_GC_REAP_KEYTYPE, &key_gc_flags);
 
 	kdebug("schedule");
-	queue_work(system_nrt_wq, &key_gc_work);
+	schedule_work(&key_gc_work);
 
 	kdebug("sleep");
-	wait_on_bit(&key_gc_flags, KEY_GC_REAPING_KEYTYPE, key_gc_wait_bit,
+	wait_on_bit(&key_gc_flags, KEY_GC_REAPING_KEYTYPE,
 		    TASK_UNINTERRUPTIBLE);
 
 	key_gc_dead_keytype = NULL;
@@ -131,6 +141,7 @@ void key_gc_keytype(struct key_type *ktype)
 }
 
 /*
+<<<<<<< HEAD
  * Garbage collect pointers from a keyring.
  *
  * Not called with any locks held.  The keyring's key struct will not be
@@ -175,6 +186,8 @@ do_gc:
 }
 
 /*
+=======
+>>>>>>> android-4.9
  * Garbage collect a list of unreferenced, detached keys
  */
 static noinline void key_gc_unused_keys(struct list_head *keys)
@@ -371,7 +384,7 @@ maybe_resched:
 	}
 
 	if (gc_state & KEY_GC_REAP_AGAIN)
-		queue_work(system_nrt_wq, &key_gc_work);
+		schedule_work(&key_gc_work);
 	kleave(" [end %x]", gc_state);
 	return;
 
@@ -394,8 +407,7 @@ found_unreferenced_key:
 	 */
 found_keyring:
 	spin_unlock(&key_serial_lock);
-	kdebug("scan keyring %d", key->serial);
-	key_gc_keyring(key, limit);
+	keyring_gc(key, limit);
 	goto maybe_resched;
 
 	/* We found a dead key that is still referenced.  Reset its type and

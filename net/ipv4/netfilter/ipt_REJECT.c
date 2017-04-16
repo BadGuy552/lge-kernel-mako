@@ -17,21 +17,20 @@
 #include <linux/udp.h>
 #include <linux/icmp.h>
 #include <net/icmp.h>
-#include <net/ip.h>
-#include <net/tcp.h>
-#include <net/route.h>
-#include <net/dst.h>
 #include <linux/netfilter/x_tables.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
 #include <linux/netfilter_ipv4/ipt_REJECT.h>
-#ifdef CONFIG_BRIDGE_NETFILTER
+#if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 #include <linux/netfilter_bridge.h>
 #endif
+
+#include <net/netfilter/ipv4/nf_reject.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Netfilter Core Team <coreteam@netfilter.org>");
 MODULE_DESCRIPTION("Xtables: packet \"rejection\" target for IPv4");
 
+<<<<<<< HEAD
 /* Send RST reply */
 static void send_reset(struct sk_buff *oldskb, int hook)
 {
@@ -138,35 +137,38 @@ static inline void send_unreach(struct sk_buff *skb_in, int code)
 #endif
 }
 
+=======
+>>>>>>> android-4.9
 static unsigned int
 reject_tg(struct sk_buff *skb, const struct xt_action_param *par)
 {
 	const struct ipt_reject_info *reject = par->targinfo;
+	int hook = par->hooknum;
 
 	switch (reject->with) {
 	case IPT_ICMP_NET_UNREACHABLE:
-		send_unreach(skb, ICMP_NET_UNREACH);
+		nf_send_unreach(skb, ICMP_NET_UNREACH, hook);
 		break;
 	case IPT_ICMP_HOST_UNREACHABLE:
-		send_unreach(skb, ICMP_HOST_UNREACH);
+		nf_send_unreach(skb, ICMP_HOST_UNREACH, hook);
 		break;
 	case IPT_ICMP_PROT_UNREACHABLE:
-		send_unreach(skb, ICMP_PROT_UNREACH);
+		nf_send_unreach(skb, ICMP_PROT_UNREACH, hook);
 		break;
 	case IPT_ICMP_PORT_UNREACHABLE:
-		send_unreach(skb, ICMP_PORT_UNREACH);
+		nf_send_unreach(skb, ICMP_PORT_UNREACH, hook);
 		break;
 	case IPT_ICMP_NET_PROHIBITED:
-		send_unreach(skb, ICMP_NET_ANO);
+		nf_send_unreach(skb, ICMP_NET_ANO, hook);
 		break;
 	case IPT_ICMP_HOST_PROHIBITED:
-		send_unreach(skb, ICMP_HOST_ANO);
+		nf_send_unreach(skb, ICMP_HOST_ANO, hook);
 		break;
 	case IPT_ICMP_ADMIN_PROHIBITED:
-		send_unreach(skb, ICMP_PKT_FILTERED);
+		nf_send_unreach(skb, ICMP_PKT_FILTERED, hook);
 		break;
 	case IPT_TCP_RESET:
-		send_reset(skb, par->hooknum);
+		nf_send_reset(par->net, skb, hook);
 	case IPT_ICMP_ECHOREPLY:
 		/* Doesn't happen. */
 		break;

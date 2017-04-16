@@ -15,13 +15,18 @@
 #include <linux/freezer.h>
 #include <linux/kthread.h>
 #include <linux/scatterlist.h>
+#include <linux/dma-mapping.h>
 
 #include <linux/mmc/card.h>
 #include <linux/mmc/host.h>
+#include <linux/sched/rt.h>
+
 #include "queue.h"
+#include "block.h"
 
 #define MMC_QUEUE_BOUNCESZ	65536
 
+<<<<<<< HEAD
 
 /*
  * Based on benchmark tests the default num of requests to trigger the write
@@ -30,6 +35,8 @@
  */
 #define DEFAULT_NUM_REQS_TO_START_PACK 17
 
+=======
+>>>>>>> android-4.9
 /*
  * Prepare a MMC request. This just filters out odd stuff.
  */
@@ -40,12 +47,13 @@ static int mmc_prep_request(struct request_queue *q, struct request *req)
 	/*
 	 * We only like normal block requests and discards.
 	 */
-	if (req->cmd_type != REQ_TYPE_FS && !(req->cmd_flags & REQ_DISCARD)) {
+	if (req->cmd_type != REQ_TYPE_FS && req_op(req) != REQ_OP_DISCARD &&
+	    req_op(req) != REQ_OP_SECURE_ERASE) {
 		blk_dump_rq_flags(req, "MMC bad request");
 		return BLKPREP_KILL;
 	}
 
-	if (mq && mmc_card_removed(mq->card))
+	if (mq && (mmc_card_removed(mq->card) || mmc_access_rpmb(mq)))
 		return BLKPREP_KILL;
 
 	req->cmd_flags |= REQ_DONTPREP;
@@ -57,14 +65,21 @@ static int mmc_queue_thread(void *d)
 {
 	struct mmc_queue *mq = d;
 	struct request_queue *q = mq->queue;
+<<<<<<< HEAD
 	struct mmc_card *card = mq->card;
+=======
+	struct sched_param scheduler_params = {0};
+
+	scheduler_params.sched_priority = 1;
+
+	sched_setscheduler(current, SCHED_FIFO, &scheduler_params);
+>>>>>>> android-4.9
 
 	current->flags |= PF_MEMALLOC;
 
 	down(&mq->thread_sem);
 	do {
 		struct request *req = NULL;
-		struct mmc_queue_req *tmp;
 
 		spin_lock_irq(q->queue_lock);
 		set_current_state(TASK_INTERRUPTIBLE);
@@ -79,7 +94,10 @@ static int mmc_queue_thread(void *d)
 		spin_unlock_irq(q->queue_lock);
 
 		if (req || mq->mqrq_prev->req) {
+			bool req_is_special = mmc_req_is_special(req);
+
 			set_current_state(TASK_RUNNING);
+<<<<<<< HEAD
 			mq->issue_fn(mq, req);
 			if (mq->flags & MMC_QUEUE_NEW_REQUEST) {
 				mq->flags &= ~MMC_QUEUE_NEW_REQUEST;
@@ -96,6 +114,28 @@ static int mmc_queue_thread(void *d)
 				mq->mqrq_cur->brq.mrq.data = NULL;
 				mq->mqrq_cur->req = NULL;
 			}
+=======
+			mmc_blk_issue_rq(mq, req);
+			cond_resched();
+			if (mq->flags & MMC_QUEUE_NEW_REQUEST) {
+				mq->flags &= ~MMC_QUEUE_NEW_REQUEST;
+				continue; /* fetch again */
+			}
+
+			/*
+			 * Current request becomes previous request
+			 * and vice versa.
+			 * In case of special requests, current request
+			 * has been finished. Do not assign it to previous
+			 * request.
+			 */
+			if (req_is_special)
+				mq->mqrq_cur->req = NULL;
+
+			mq->mqrq_prev->brq.mrq.data = NULL;
+			mq->mqrq_prev->req = NULL;
+			swap(mq->mqrq_prev, mq->mqrq_cur);
+>>>>>>> android-4.9
 		} else {
 			if (kthread_should_stop()) {
 				set_current_state(TASK_RUNNING);
@@ -107,6 +147,7 @@ static int mmc_queue_thread(void *d)
 			schedule();
 			down(&mq->thread_sem);
 		}
+<<<<<<< HEAD
 
 		/*
 		 * Current request becomes previous request
@@ -117,6 +158,8 @@ static int mmc_queue_thread(void *d)
 		tmp = mq->mqrq_prev;
 		mq->mqrq_prev = mq->mqrq_cur;
 		mq->mqrq_cur = tmp;
+=======
+>>>>>>> android-4.9
 	} while (1);
 	up(&mq->thread_sem);
 
@@ -129,7 +172,7 @@ static int mmc_queue_thread(void *d)
  * on any queue on this host, and attempt to issue it.  This may
  * not be the queue we were asked to process.
  */
-static void mmc_request(struct request_queue *q)
+static void mmc_request_fn(struct request_queue *q)
 {
 	struct mmc_queue *mq = q->queuedata;
 	struct request *req;
@@ -227,7 +270,7 @@ static void mmc_queue_setup_discard(struct request_queue *q,
 		return;
 
 	queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, q);
-	q->limits.max_discard_sectors = max_discard;
+	blk_queue_max_discard_sectors(q, max_discard);
 	if (card->erased_byte == 0 && !mmc_can_discard(card))
 		q->limits.discard_zeroes_data = 1;
 	q->limits.discard_granularity = card->pref_erase << 9;
@@ -235,7 +278,11 @@ static void mmc_queue_setup_discard(struct request_queue *q,
 	if (card->pref_erase > max_discard)
 		q->limits.discard_granularity = 0;
 	if (mmc_can_secure_erase_trim(card))
+<<<<<<< HEAD
 		queue_flag_set_unlocked(QUEUE_FLAG_SECDISCARD, q);
+=======
+		queue_flag_set_unlocked(QUEUE_FLAG_SECERASE, q);
+>>>>>>> android-4.9
 }
 
 static void mmc_queue_setup_sanitize(struct request_queue *q)
@@ -262,13 +309,14 @@ int mmc_init_queue(struct mmc_queue *mq, struct mmc_card *card,
 	struct mmc_queue_req *mqrq_prev = &mq->mqrq[1];
 
 	if (mmc_dev(host)->dma_mask && *mmc_dev(host)->dma_mask)
-		limit = *mmc_dev(host)->dma_mask;
+		limit = (u64)dma_max_pfn(mmc_dev(host)) << PAGE_SHIFT;
 
 	mq->card = card;
-	mq->queue = blk_init_queue(mmc_request, lock);
+	mq->queue = blk_init_queue(mmc_request_fn, lock);
 	if (!mq->queue)
 		return -ENOMEM;
 
+<<<<<<< HEAD
 	if ((host->caps2 & MMC_CAP2_STOP_REQUEST) &&
 			host->ops->stop_request &&
 			mq->card->ext_csd.hpi)
@@ -280,6 +328,8 @@ int mmc_init_queue(struct mmc_queue *mq, struct mmc_card *card,
 	INIT_LIST_HEAD(&mqrq_cur->packed_list);
 	INIT_LIST_HEAD(&mqrq_prev->packed_list);
 
+=======
+>>>>>>> android-4.9
 	mq->mqrq_cur = mqrq_cur;
 	mq->mqrq_prev = mqrq_prev;
 	mq->queue->queuedata = mq;
@@ -287,6 +337,7 @@ int mmc_init_queue(struct mmc_queue *mq, struct mmc_card *card,
 
 	blk_queue_prep_rq(mq->queue, mmc_prep_request);
 	queue_flag_set_unlocked(QUEUE_FLAG_NONROT, mq->queue);
+	queue_flag_clear_unlocked(QUEUE_FLAG_ADD_RANDOM, mq->queue);
 	if (mmc_can_erase(card))
 		mmc_queue_setup_discard(mq->queue, card);
 
@@ -309,17 +360,17 @@ int mmc_init_queue(struct mmc_queue *mq, struct mmc_card *card,
 		if (bouncesz > 512) {
 			mqrq_cur->bounce_buf = kmalloc(bouncesz, GFP_KERNEL);
 			if (!mqrq_cur->bounce_buf) {
-				pr_warning("%s: unable to "
-					"allocate bounce cur buffer\n",
+				pr_warn("%s: unable to allocate bounce cur buffer\n",
 					mmc_card_name(card));
-			}
-			mqrq_prev->bounce_buf = kmalloc(bouncesz, GFP_KERNEL);
-			if (!mqrq_prev->bounce_buf) {
-				pr_warning("%s: unable to "
-					"allocate bounce prev buffer\n",
-					mmc_card_name(card));
-				kfree(mqrq_cur->bounce_buf);
-				mqrq_cur->bounce_buf = NULL;
+			} else {
+				mqrq_prev->bounce_buf =
+						kmalloc(bouncesz, GFP_KERNEL);
+				if (!mqrq_prev->bounce_buf) {
+					pr_warn("%s: unable to allocate bounce prev buffer\n",
+						mmc_card_name(card));
+					kfree(mqrq_cur->bounce_buf);
+					mqrq_cur->bounce_buf = NULL;
+				}
 			}
 		}
 
@@ -440,6 +491,49 @@ void mmc_cleanup_queue(struct mmc_queue *mq)
 }
 EXPORT_SYMBOL(mmc_cleanup_queue);
 
+int mmc_packed_init(struct mmc_queue *mq, struct mmc_card *card)
+{
+	struct mmc_queue_req *mqrq_cur = &mq->mqrq[0];
+	struct mmc_queue_req *mqrq_prev = &mq->mqrq[1];
+	int ret = 0;
+
+
+	mqrq_cur->packed = kzalloc(sizeof(struct mmc_packed), GFP_KERNEL);
+	if (!mqrq_cur->packed) {
+		pr_warn("%s: unable to allocate packed cmd for mqrq_cur\n",
+			mmc_card_name(card));
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	mqrq_prev->packed = kzalloc(sizeof(struct mmc_packed), GFP_KERNEL);
+	if (!mqrq_prev->packed) {
+		pr_warn("%s: unable to allocate packed cmd for mqrq_prev\n",
+			mmc_card_name(card));
+		kfree(mqrq_cur->packed);
+		mqrq_cur->packed = NULL;
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	INIT_LIST_HEAD(&mqrq_cur->packed->list);
+	INIT_LIST_HEAD(&mqrq_prev->packed->list);
+
+out:
+	return ret;
+}
+
+void mmc_packed_clean(struct mmc_queue *mq)
+{
+	struct mmc_queue_req *mqrq_cur = &mq->mqrq[0];
+	struct mmc_queue_req *mqrq_prev = &mq->mqrq[1];
+
+	kfree(mqrq_cur->packed);
+	mqrq_cur->packed = NULL;
+	kfree(mqrq_prev->packed);
+	mqrq_prev->packed = NULL;
+}
+
 /**
  * mmc_queue_suspend - suspend a MMC request queue
  * @mq: MMC queue to suspend
@@ -485,6 +579,7 @@ void mmc_queue_resume(struct mmc_queue *mq)
 }
 
 static unsigned int mmc_queue_packed_map_sg(struct mmc_queue *mq,
+<<<<<<< HEAD
 					    struct mmc_queue_req *mqrq,
 					    struct scatterlist *sg)
 {
@@ -508,6 +603,37 @@ static unsigned int mmc_queue_packed_map_sg(struct mmc_queue *mq,
 		sg_len += blk_rq_map_sg(mq->queue, req, __sg);
 		__sg = sg + (sg_len - 1);
 		(__sg++)->page_link &= ~0x02;
+=======
+					    struct mmc_packed *packed,
+					    struct scatterlist *sg,
+					    enum mmc_packed_type cmd_type)
+{
+	struct scatterlist *__sg = sg;
+	unsigned int sg_len = 0;
+	struct request *req;
+
+	if (mmc_packed_wr(cmd_type)) {
+		unsigned int hdr_sz = mmc_large_sector(mq->card) ? 4096 : 512;
+		unsigned int max_seg_sz = queue_max_segment_size(mq->queue);
+		unsigned int len, remain, offset = 0;
+		u8 *buf = (u8 *)packed->cmd_hdr;
+
+		remain = hdr_sz;
+		do {
+			len = min(remain, max_seg_sz);
+			sg_set_buf(__sg, buf + offset, len);
+			offset += len;
+			remain -= len;
+			sg_unmark_end(__sg++);
+			sg_len++;
+		} while (remain);
+	}
+
+	list_for_each_entry(req, &packed->list, queuelist) {
+		sg_len += blk_rq_map_sg(mq->queue, req, __sg);
+		__sg = sg + (sg_len - 1);
+		sg_unmark_end(__sg++);
+>>>>>>> android-4.9
 	}
 	sg_mark_end(sg + (sg_len - 1));
 	return sg_len;
@@ -521,19 +647,35 @@ unsigned int mmc_queue_map_sg(struct mmc_queue *mq, struct mmc_queue_req *mqrq)
 	unsigned int sg_len;
 	size_t buflen;
 	struct scatterlist *sg;
+	enum mmc_packed_type cmd_type;
 	int i;
 
+<<<<<<< HEAD
 	if (!mqrq->bounce_buf) {
 		if (!list_empty(&mqrq->packed_list))
 			return mmc_queue_packed_map_sg(mq, mqrq, mqrq->sg);
+=======
+	cmd_type = mqrq->cmd_type;
+
+	if (!mqrq->bounce_buf) {
+		if (mmc_packed_cmd(cmd_type))
+			return mmc_queue_packed_map_sg(mq, mqrq->packed,
+						       mqrq->sg, cmd_type);
+>>>>>>> android-4.9
 		else
 			return blk_rq_map_sg(mq->queue, mqrq->req, mqrq->sg);
 	}
 
 	BUG_ON(!mqrq->bounce_sg);
 
+<<<<<<< HEAD
 	if (!list_empty(&mqrq->packed_list))
 		sg_len = mmc_queue_packed_map_sg(mq, mqrq, mqrq->bounce_sg);
+=======
+	if (mmc_packed_cmd(cmd_type))
+		sg_len = mmc_queue_packed_map_sg(mq, mqrq->packed,
+						 mqrq->bounce_sg, cmd_type);
+>>>>>>> android-4.9
 	else
 		sg_len = blk_rq_map_sg(mq->queue, mqrq->req, mqrq->bounce_sg);
 

@@ -1,7 +1,11 @@
 /*
  * First-level interrupt controller model for Hexagon.
  *
+<<<<<<< HEAD
  * Copyright (c) 2010-2011 The Linux Foundation. All rights reserved.
+=======
+ * Copyright (c) 2010-2011, The Linux Foundation. All rights reserved.
+>>>>>>> android-4.9
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and

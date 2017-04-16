@@ -299,47 +299,51 @@ EXPORT_SYMBOL(fc_get_host_speed);
  */
 struct fc_host_statistics *fc_get_host_stats(struct Scsi_Host *shost)
 {
-	struct fc_host_statistics *fcoe_stats;
+	struct fc_host_statistics *fc_stats;
 	struct fc_lport *lport = shost_priv(shost);
-	struct timespec v0, v1;
 	unsigned int cpu;
 	u64 fcp_in_bytes = 0;
 	u64 fcp_out_bytes = 0;
 
-	fcoe_stats = &lport->host_stats;
-	memset(fcoe_stats, 0, sizeof(struct fc_host_statistics));
+	fc_stats = &lport->host_stats;
+	memset(fc_stats, 0, sizeof(struct fc_host_statistics));
 
-	jiffies_to_timespec(jiffies, &v0);
-	jiffies_to_timespec(lport->boot_time, &v1);
-	fcoe_stats->seconds_since_last_reset = (v0.tv_sec - v1.tv_sec);
+	fc_stats->seconds_since_last_reset = (jiffies - lport->boot_time) / HZ;
 
 	for_each_possible_cpu(cpu) {
-		struct fcoe_dev_stats *stats;
+		struct fc_stats *stats;
 
-		stats = per_cpu_ptr(lport->dev_stats, cpu);
+		stats = per_cpu_ptr(lport->stats, cpu);
 
-		fcoe_stats->tx_frames += stats->TxFrames;
-		fcoe_stats->tx_words += stats->TxWords;
-		fcoe_stats->rx_frames += stats->RxFrames;
-		fcoe_stats->rx_words += stats->RxWords;
-		fcoe_stats->error_frames += stats->ErrorFrames;
-		fcoe_stats->invalid_crc_count += stats->InvalidCRCCount;
-		fcoe_stats->fcp_input_requests += stats->InputRequests;
-		fcoe_stats->fcp_output_requests += stats->OutputRequests;
-		fcoe_stats->fcp_control_requests += stats->ControlRequests;
+		fc_stats->tx_frames += stats->TxFrames;
+		fc_stats->tx_words += stats->TxWords;
+		fc_stats->rx_frames += stats->RxFrames;
+		fc_stats->rx_words += stats->RxWords;
+		fc_stats->error_frames += stats->ErrorFrames;
+		fc_stats->invalid_crc_count += stats->InvalidCRCCount;
+		fc_stats->fcp_input_requests += stats->InputRequests;
+		fc_stats->fcp_output_requests += stats->OutputRequests;
+		fc_stats->fcp_control_requests += stats->ControlRequests;
 		fcp_in_bytes += stats->InputBytes;
 		fcp_out_bytes += stats->OutputBytes;
-		fcoe_stats->link_failure_count += stats->LinkFailureCount;
+		fc_stats->fcp_packet_alloc_failures += stats->FcpPktAllocFails;
+		fc_stats->fcp_packet_aborts += stats->FcpPktAborts;
+		fc_stats->fcp_frame_alloc_failures += stats->FcpFrameAllocFails;
+		fc_stats->link_failure_count += stats->LinkFailureCount;
 	}
-	fcoe_stats->fcp_input_megabytes = div_u64(fcp_in_bytes, 1000000);
-	fcoe_stats->fcp_output_megabytes = div_u64(fcp_out_bytes, 1000000);
-	fcoe_stats->lip_count = -1;
-	fcoe_stats->nos_count = -1;
-	fcoe_stats->loss_of_sync_count = -1;
-	fcoe_stats->loss_of_signal_count = -1;
-	fcoe_stats->prim_seq_protocol_err_count = -1;
-	fcoe_stats->dumped_frames = -1;
-	return fcoe_stats;
+	fc_stats->fcp_input_megabytes = div_u64(fcp_in_bytes, 1000000);
+	fc_stats->fcp_output_megabytes = div_u64(fcp_out_bytes, 1000000);
+	fc_stats->lip_count = -1;
+	fc_stats->nos_count = -1;
+	fc_stats->loss_of_sync_count = -1;
+	fc_stats->loss_of_signal_count = -1;
+	fc_stats->prim_seq_protocol_err_count = -1;
+	fc_stats->dumped_frames = -1;
+
+	/* update exches stats */
+	fc_exch_update_stats(lport);
+
+	return fc_stats;
 }
 EXPORT_SYMBOL(fc_get_host_stats);
 
@@ -509,7 +513,7 @@ static void fc_lport_recv_rnid_req(struct fc_lport *lport,
  * @lport: The local port receiving the LOGO
  * @fp:	   The LOGO request frame
  *
- * Locking Note: The lport lock is exected to be held before calling
+ * Locking Note: The lport lock is expected to be held before calling
  * this function.
  */
 static void fc_lport_recv_logo_req(struct fc_lport *lport, struct fc_frame *fp)
@@ -648,6 +652,7 @@ int fc_lport_destroy(struct fc_lport *lport)
 	lport->tt.fcp_abort_io(lport);
 	lport->tt.disc_stop_final(lport);
 	lport->tt.exch_mgr_reset(lport, 0, 0);
+	cancel_delayed_work_sync(&lport->retry_work);
 	fc_fc4_del_lport(lport);
 	return 0;
 }
@@ -972,7 +977,8 @@ drop:
 	rcu_read_unlock();
 	FC_LPORT_DBG(lport, "dropping unexpected frame type %x\n", fh->fh_type);
 	fc_frame_free(fp);
-	lport->tt.exch_done(sp);
+	if (sp)
+		lport->tt.exch_done(sp);
 }
 
 /**
@@ -1079,7 +1085,7 @@ static void fc_lport_error(struct fc_lport *lport, struct fc_frame *fp)
 {
 	unsigned long delay = 0;
 	FC_LPORT_DBG(lport, "Error %ld in state %s, retries %d\n",
-		     PTR_ERR(fp), fc_lport_state(lport),
+		     IS_ERR(fp) ? -PTR_ERR(fp) : 0, fc_lport_state(lport),
 		     lport->retry_count);
 
 	if (PTR_ERR(fp) == -FC_EX_CLOSED)
@@ -1564,7 +1570,6 @@ static void fc_lport_timeout(struct work_struct *work)
 
 	switch (lport->state) {
 	case LPORT_ST_DISABLED:
-		WARN_ON(1);
 		break;
 	case LPORT_ST_READY:
 		break;
@@ -1590,8 +1595,9 @@ static void fc_lport_timeout(struct work_struct *work)
 	case LPORT_ST_RPA:
 	case LPORT_ST_DHBA:
 	case LPORT_ST_DPRT:
-		fc_lport_enter_ms(lport, lport->state);
-		break;
+		FC_LPORT_DBG(lport, "Skipping lport state %s to SCR\n",
+			     fc_lport_state(lport));
+		/* fall thru */
 	case LPORT_ST_SCR:
 		fc_lport_enter_scr(lport);
 		break;
@@ -2081,7 +2087,7 @@ int fc_lport_bsg_request(struct fc_bsg_job *job)
 	struct fc_rport *rport;
 	struct fc_rport_priv *rdata;
 	int rc = -EINVAL;
-	u32 did;
+	u32 did, tov;
 
 	job->reply->reply_payload_rcv_len = 0;
 	if (rsp)
@@ -2112,15 +2118,20 @@ int fc_lport_bsg_request(struct fc_bsg_job *job)
 
 	case FC_BSG_HST_CT:
 		did = ntoh24(job->request->rqst_data.h_ct.port_id);
-		if (did == FC_FID_DIR_SERV)
+		if (did == FC_FID_DIR_SERV) {
 			rdata = lport->dns_rdata;
-		else
+			if (!rdata)
+				break;
+			tov = rdata->e_d_tov;
+		} else {
 			rdata = lport->tt.rport_lookup(lport, did);
+			if (!rdata)
+				break;
+			tov = rdata->e_d_tov;
+			kref_put(&rdata->kref, lport->tt.rport_destroy);
+		}
 
-		if (!rdata)
-			break;
-
-		rc = fc_lport_ct_request(job, lport, did, rdata->e_d_tov);
+		rc = fc_lport_ct_request(job, lport, did, tov);
 		break;
 
 	case FC_BSG_HST_ELS_NOLOGIN:

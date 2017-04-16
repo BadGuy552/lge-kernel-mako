@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #ifndef _LINUX_CORESIGHT_STM_H
 #define _LINUX_CORESIGHT_STM_H
 
@@ -47,5 +48,11 @@ static inline int stm_trace(uint32_t options, uint8_t entity_id,
 }
 #endif
 #endif /* __KERNEL__ */
+=======
+#ifndef __LINUX_CORESIGHT_STM_H_
+#define __LINUX_CORESIGHT_STM_H_
+
+#include <uapi/linux/coresight-stm.h>
+>>>>>>> android-4.9
 
 #endif

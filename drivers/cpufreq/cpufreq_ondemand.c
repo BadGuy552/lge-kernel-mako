@@ -11,16 +11,13 @@
  * published by the Free Software Foundation.
  */
 
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/init.h>
-#include <linux/cpufreq.h>
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/cpu.h>
-#include <linux/jiffies.h>
-#include <linux/kernel_stat.h>
-#include <linux/mutex.h>
-#include <linux/hrtimer.h>
+#include <linux/percpu-defs.h>
+#include <linux/slab.h>
 #include <linux/tick.h>
+<<<<<<< HEAD
 #include <linux/ktime.h>
 #include <linux/smpboot.h>
 #include <linux/sched.h>
@@ -29,41 +26,24 @@
 #include <linux/slab.h>
 
 #include <trace/events/power.h>
+=======
+>>>>>>> android-4.9
 
-/*
- * dbs is used in this file as a shortform for demandbased switching
- * It helps to keep variable names smaller, simpler
- */
+#include "cpufreq_ondemand.h"
 
-#define DEF_FREQUENCY_DOWN_DIFFERENTIAL		(10)
+/* On-demand governor macros */
 #define DEF_FREQUENCY_UP_THRESHOLD		(80)
 #define DEF_SAMPLING_DOWN_FACTOR		(1)
 #define MAX_SAMPLING_DOWN_FACTOR		(100000)
-#define MICRO_FREQUENCY_DOWN_DIFFERENTIAL	(3)
 #define MICRO_FREQUENCY_UP_THRESHOLD		(95)
 #define MICRO_FREQUENCY_MIN_SAMPLE_RATE		(10000)
 #define MIN_FREQUENCY_UP_THRESHOLD		(11)
 #define MAX_FREQUENCY_UP_THRESHOLD		(100)
 #define MIN_FREQUENCY_DOWN_DIFFERENTIAL		(1)
 
-/*
- * The polling frequency of this governor depends on the capability of
- * the processor. Default polling frequency is 1000 times the transition
- * latency of the processor. The governor will work on any processor with
- * transition latency <= 10mS, using appropriate sampling
- * rate.
- * For CPUs with transition latency > 10mS (mostly drivers with CPUFREQ_ETERNAL)
- * this governor will not work.
- * All times here are in uS.
- */
-#define MIN_SAMPLING_RATE_RATIO			(2)
+static struct od_ops od_ops;
 
-static unsigned int min_sampling_rate;
-
-#define LATENCY_MULTIPLIER			(1000)
-#define MIN_LATENCY_MULTIPLIER			(100)
-#define TRANSITION_LATENCY_LIMIT		(10 * 1000 * 1000)
-
+<<<<<<< HEAD
 #define POWERSAVE_BIAS_MAXLEVEL			(1000)
 #define POWERSAVE_BIAS_MINLEVEL			(-1000)
 
@@ -162,26 +142,44 @@ static struct dbs_tuners {
 };
 
 static inline cputime64_t get_cpu_iowait_time(unsigned int cpu, cputime64_t *wall)
+=======
+static unsigned int default_powersave_bias;
+
+/*
+ * Not all CPUs want IO time to be accounted as busy; this depends on how
+ * efficient idling at a higher frequency/voltage is.
+ * Pavel Machek says this is not so for various generations of AMD and old
+ * Intel systems.
+ * Mike Chan (android.com) claims this is also not true for ARM.
+ * Because of this, whitelist specific known (series) of CPUs by default, and
+ * leave all others up to the user.
+ */
+static int should_io_be_busy(void)
+>>>>>>> android-4.9
 {
-	u64 iowait_time = get_cpu_iowait_time_us(cpu, wall);
-
-	if (iowait_time == -1ULL)
-		return 0;
-
-	return iowait_time;
+#if defined(CONFIG_X86)
+	/*
+	 * For Intel, Core 2 (model 15) and later have an efficient idle.
+	 */
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_INTEL &&
+			boot_cpu_data.x86 == 6 &&
+			boot_cpu_data.x86_model >= 15)
+		return 1;
+#endif
+	return 0;
 }
 
 /*
  * Find right freq to be set now with powersave_bias on.
- * Returns the freq_hi to be used right now and will set freq_hi_jiffies,
- * freq_lo, and freq_lo_jiffies in percpu area for averaging freqs.
+ * Returns the freq_hi to be used right now and will set freq_hi_delay_us,
+ * freq_lo, and freq_lo_delay_us in percpu area for averaging freqs.
  */
-static unsigned int powersave_bias_target(struct cpufreq_policy *policy,
-					  unsigned int freq_next,
-					  unsigned int relation)
+static unsigned int generic_powersave_bias_target(struct cpufreq_policy *policy,
+		unsigned int freq_next, unsigned int relation)
 {
 	unsigned int freq_req, freq_avg;
 	unsigned int freq_hi, freq_lo;
+<<<<<<< HEAD
 	unsigned int index = 0;
 	unsigned int jiffies_total, jiffies_hi, jiffies_lo;
 	int freq_reduc;
@@ -189,44 +187,49 @@ static unsigned int powersave_bias_target(struct cpufreq_policy *policy,
 						   policy->cpu);
 
 	if (!dbs_info->freq_table) {
+=======
+	unsigned int index;
+	unsigned int delay_hi_us;
+	struct policy_dbs_info *policy_dbs = policy->governor_data;
+	struct od_policy_dbs_info *dbs_info = to_dbs_info(policy_dbs);
+	struct dbs_data *dbs_data = policy_dbs->dbs_data;
+	struct od_dbs_tuners *od_tuners = dbs_data->tuners;
+	struct cpufreq_frequency_table *freq_table = policy->freq_table;
+
+	if (!freq_table) {
+>>>>>>> android-4.9
 		dbs_info->freq_lo = 0;
-		dbs_info->freq_lo_jiffies = 0;
+		dbs_info->freq_lo_delay_us = 0;
 		return freq_next;
 	}
 
-	cpufreq_frequency_table_target(policy, dbs_info->freq_table, freq_next,
-			relation, &index);
-	freq_req = dbs_info->freq_table[index].frequency;
-	freq_reduc = freq_req * dbs_tuners_ins.powersave_bias / 1000;
+	index = cpufreq_frequency_table_target(policy, freq_next, relation);
+	freq_req = freq_table[index].frequency;
+	freq_reduc = freq_req * od_tuners->powersave_bias / 1000;
 	freq_avg = freq_req - freq_reduc;
 
 	/* Find freq bounds for freq_avg in freq_table */
-	index = 0;
-	cpufreq_frequency_table_target(policy, dbs_info->freq_table, freq_avg,
-			CPUFREQ_RELATION_H, &index);
-	freq_lo = dbs_info->freq_table[index].frequency;
-	index = 0;
-	cpufreq_frequency_table_target(policy, dbs_info->freq_table, freq_avg,
-			CPUFREQ_RELATION_L, &index);
-	freq_hi = dbs_info->freq_table[index].frequency;
+	index = cpufreq_table_find_index_h(policy, freq_avg);
+	freq_lo = freq_table[index].frequency;
+	index = cpufreq_table_find_index_l(policy, freq_avg);
+	freq_hi = freq_table[index].frequency;
 
 	/* Find out how long we have to be in hi and lo freqs */
 	if (freq_hi == freq_lo) {
 		dbs_info->freq_lo = 0;
-		dbs_info->freq_lo_jiffies = 0;
+		dbs_info->freq_lo_delay_us = 0;
 		return freq_lo;
 	}
-	jiffies_total = usecs_to_jiffies(dbs_tuners_ins.sampling_rate);
-	jiffies_hi = (freq_avg - freq_lo) * jiffies_total;
-	jiffies_hi += ((freq_hi - freq_lo) / 2);
-	jiffies_hi /= (freq_hi - freq_lo);
-	jiffies_lo = jiffies_total - jiffies_hi;
+	delay_hi_us = (freq_avg - freq_lo) * dbs_data->sampling_rate;
+	delay_hi_us += (freq_hi - freq_lo) / 2;
+	delay_hi_us /= freq_hi - freq_lo;
+	dbs_info->freq_hi_delay_us = delay_hi_us;
 	dbs_info->freq_lo = freq_lo;
-	dbs_info->freq_lo_jiffies = jiffies_lo;
-	dbs_info->freq_hi_jiffies = jiffies_hi;
+	dbs_info->freq_lo_delay_us = dbs_data->sampling_rate - delay_hi_us;
 	return freq_hi;
 }
 
+<<<<<<< HEAD
 static int ondemand_powersave_bias_setspeed(struct cpufreq_policy *policy,
 					    struct cpufreq_policy *altpolicy,
 					    int level)
@@ -248,28 +251,32 @@ static int ondemand_powersave_bias_setspeed(struct cpufreq_policy *policy,
 }
 
 static void ondemand_powersave_bias_init_cpu(int cpu)
+=======
+static void ondemand_powersave_bias_init(struct cpufreq_policy *policy)
+>>>>>>> android-4.9
 {
-	struct cpu_dbs_info_s *dbs_info = &per_cpu(od_cpu_dbs_info, cpu);
-	dbs_info->freq_table = cpufreq_frequency_get_table(cpu);
+	struct od_policy_dbs_info *dbs_info = to_dbs_info(policy->governor_data);
+
 	dbs_info->freq_lo = 0;
 }
 
-static void ondemand_powersave_bias_init(void)
+static void dbs_freq_increase(struct cpufreq_policy *policy, unsigned int freq)
 {
-	int i;
-	for_each_online_cpu(i) {
-		ondemand_powersave_bias_init_cpu(i);
-	}
+	struct policy_dbs_info *policy_dbs = policy->governor_data;
+	struct dbs_data *dbs_data = policy_dbs->dbs_data;
+	struct od_dbs_tuners *od_tuners = dbs_data->tuners;
+
+	if (od_tuners->powersave_bias)
+		freq = od_ops.powersave_bias_target(policy, freq,
+				CPUFREQ_RELATION_H);
+	else if (policy->cur == policy->max)
+		return;
+
+	__cpufreq_driver_target(policy, freq, od_tuners->powersave_bias ?
+			CPUFREQ_RELATION_L : CPUFREQ_RELATION_H);
 }
 
-/************************** sysfs interface ************************/
-
-static ssize_t show_sampling_rate_min(struct kobject *kobj,
-				      struct attribute *attr, char *buf)
-{
-	return sprintf(buf, "%u\n", min_sampling_rate);
-}
-
+<<<<<<< HEAD
 define_one_global_ro(sampling_rate_min);
 
 /* cpufreq_ondemand Governor Tunables */
@@ -310,11 +317,22 @@ static ssize_t show_powersave_bias
  * then, the governor may change the sampling rate too late; up to 1 second
  * later. Thus, if we are reducing the sampling rate, we need to make the
  * new value effective immediately.
+=======
+/*
+ * Every sampling_rate, we check, if current idle time is less than 20%
+ * (default), then we try to increase frequency. Else, we adjust the frequency
+ * proportional to load.
+>>>>>>> android-4.9
  */
-static void update_sampling_rate(unsigned int new_rate)
+static void od_update(struct cpufreq_policy *policy)
 {
-	int cpu;
+	struct policy_dbs_info *policy_dbs = policy->governor_data;
+	struct od_policy_dbs_info *dbs_info = to_dbs_info(policy_dbs);
+	struct dbs_data *dbs_data = policy_dbs->dbs_data;
+	struct od_dbs_tuners *od_tuners = dbs_data->tuners;
+	unsigned int load = dbs_update(policy);
 
+<<<<<<< HEAD
 	dbs_tuners_ins.sampling_rate = new_rate
 				     = max(new_rate, min_sampling_rate);
 
@@ -323,51 +341,77 @@ static void update_sampling_rate(unsigned int new_rate)
 		struct cpufreq_policy *policy;
 		struct cpu_dbs_info_s *dbs_info;
 		unsigned long next_sampling, appointed_at;
+=======
+	dbs_info->freq_lo = 0;
+>>>>>>> android-4.9
 
-		policy = cpufreq_cpu_get(cpu);
-		if (!policy)
-			continue;
-		dbs_info = &per_cpu(od_cpu_dbs_info, policy->cpu);
-		cpufreq_cpu_put(policy);
+	/* Check for frequency increase */
+	if (load > dbs_data->up_threshold) {
+		/* If switching to max speed, apply sampling_down_factor */
+		if (policy->cur < policy->max)
+			policy_dbs->rate_mult = dbs_data->sampling_down_factor;
+		dbs_freq_increase(policy, policy->max);
+	} else {
+		/* Calculate the next frequency proportional to load */
+		unsigned int freq_next, min_f, max_f;
 
-		mutex_lock(&dbs_info->timer_mutex);
+		min_f = policy->cpuinfo.min_freq;
+		max_f = policy->cpuinfo.max_freq;
+		freq_next = min_f + load * (max_f - min_f) / 100;
 
-		if (!delayed_work_pending(&dbs_info->work)) {
-			mutex_unlock(&dbs_info->timer_mutex);
-			continue;
-		}
+		/* No longer fully busy, reset rate_mult */
+		policy_dbs->rate_mult = 1;
 
-		next_sampling  = jiffies + usecs_to_jiffies(new_rate);
-		appointed_at = dbs_info->work.timer.expires;
+		if (od_tuners->powersave_bias)
+			freq_next = od_ops.powersave_bias_target(policy,
+								 freq_next,
+								 CPUFREQ_RELATION_L);
 
+		__cpufreq_driver_target(policy, freq_next, CPUFREQ_RELATION_C);
+	}
+}
 
-		if (time_before(next_sampling, appointed_at)) {
+static unsigned int od_dbs_timer(struct cpufreq_policy *policy)
+{
+	struct policy_dbs_info *policy_dbs = policy->governor_data;
+	struct dbs_data *dbs_data = policy_dbs->dbs_data;
+	struct od_policy_dbs_info *dbs_info = to_dbs_info(policy_dbs);
+	int sample_type = dbs_info->sample_type;
 
-			mutex_unlock(&dbs_info->timer_mutex);
-			cancel_delayed_work_sync(&dbs_info->work);
-			mutex_lock(&dbs_info->timer_mutex);
+	/* Common NORMAL_SAMPLE setup */
+	dbs_info->sample_type = OD_NORMAL_SAMPLE;
+	/*
+	 * OD_SUB_SAMPLE doesn't make sense if sample_delay_ns is 0, so ignore
+	 * it then.
+	 */
+	if (sample_type == OD_SUB_SAMPLE && policy_dbs->sample_delay_ns > 0) {
+		__cpufreq_driver_target(policy, dbs_info->freq_lo,
+					CPUFREQ_RELATION_H);
+		return dbs_info->freq_lo_delay_us;
+	}
 
+<<<<<<< HEAD
 			queue_delayed_work_on(dbs_info->cpu, dbs_wq,
 				&dbs_info->work, usecs_to_jiffies(new_rate));
+=======
+	od_update(policy);
+>>>>>>> android-4.9
 
-		}
-		mutex_unlock(&dbs_info->timer_mutex);
+	if (dbs_info->freq_lo) {
+		/* Setup timer for SUB_SAMPLE */
+		dbs_info->sample_type = OD_SUB_SAMPLE;
+		return dbs_info->freq_hi_delay_us;
 	}
+<<<<<<< HEAD
 	put_online_cpus();
 }
+=======
+>>>>>>> android-4.9
 
-static ssize_t store_sampling_rate(struct kobject *a, struct attribute *b,
-				   const char *buf, size_t count)
-{
-	unsigned int input;
-	int ret;
-	ret = sscanf(buf, "%u", &input);
-	if (ret != 1)
-		return -EINVAL;
-	update_sampling_rate(input);
-	return count;
+	return dbs_data->sampling_rate * policy_dbs->rate_mult;
 }
 
+<<<<<<< HEAD
 static ssize_t store_input_boost(struct kobject *a, struct attribute *b,
 				const char *buf, size_t count)
 {
@@ -395,17 +439,30 @@ static ssize_t store_sync_freq(struct kobject *a, struct attribute *b,
 
 static ssize_t store_io_is_busy(struct kobject *a, struct attribute *b,
 				   const char *buf, size_t count)
+=======
+/************************** sysfs interface ************************/
+static struct dbs_governor od_dbs_gov;
+
+static ssize_t store_io_is_busy(struct gov_attr_set *attr_set, const char *buf,
+				size_t count)
+>>>>>>> android-4.9
 {
+	struct dbs_data *dbs_data = to_dbs_data(attr_set);
 	unsigned int input;
 	int ret;
 
 	ret = sscanf(buf, "%u", &input);
 	if (ret != 1)
 		return -EINVAL;
-	dbs_tuners_ins.io_is_busy = !!input;
+	dbs_data->io_is_busy = !!input;
+
+	/* we need to re-evaluate prev_cpu_idle */
+	gov_update_cpu_data(dbs_data);
+
 	return count;
 }
 
+<<<<<<< HEAD
 static ssize_t store_down_differential_multi_core(struct kobject *a,
 			struct attribute *b, const char *buf, size_t count)
 {
@@ -434,8 +491,12 @@ static ssize_t store_optimal_freq(struct kobject *a, struct attribute *b,
 }
 
 static ssize_t store_up_threshold(struct kobject *a, struct attribute *b,
+=======
+static ssize_t store_up_threshold(struct gov_attr_set *attr_set,
+>>>>>>> android-4.9
 				  const char *buf, size_t count)
 {
+	struct dbs_data *dbs_data = to_dbs_data(attr_set);
 	unsigned int input;
 	int ret;
 	ret = sscanf(buf, "%u", &input);
@@ -444,10 +505,12 @@ static ssize_t store_up_threshold(struct kobject *a, struct attribute *b,
 			input < MIN_FREQUENCY_UP_THRESHOLD) {
 		return -EINVAL;
 	}
-	dbs_tuners_ins.up_threshold = input;
+
+	dbs_data->up_threshold = input;
 	return count;
 }
 
+<<<<<<< HEAD
 static ssize_t store_up_threshold_multi_core(struct kobject *a,
 			struct attribute *b, const char *buf, size_t count)
 {
@@ -497,31 +560,42 @@ static ssize_t store_down_differential(struct kobject *a, struct attribute *b,
 
 static ssize_t store_sampling_down_factor(struct kobject *a,
 			struct attribute *b, const char *buf, size_t count)
+=======
+static ssize_t store_sampling_down_factor(struct gov_attr_set *attr_set,
+					  const char *buf, size_t count)
+>>>>>>> android-4.9
 {
-	unsigned int input, j;
+	struct dbs_data *dbs_data = to_dbs_data(attr_set);
+	struct policy_dbs_info *policy_dbs;
+	unsigned int input;
 	int ret;
 	ret = sscanf(buf, "%u", &input);
 
 	if (ret != 1 || input > MAX_SAMPLING_DOWN_FACTOR || input < 1)
 		return -EINVAL;
-	dbs_tuners_ins.sampling_down_factor = input;
+
+	dbs_data->sampling_down_factor = input;
 
 	/* Reset down sampling multiplier in case it was active */
-	for_each_online_cpu(j) {
-		struct cpu_dbs_info_s *dbs_info;
-		dbs_info = &per_cpu(od_cpu_dbs_info, j);
-		dbs_info->rate_mult = 1;
+	list_for_each_entry(policy_dbs, &attr_set->policy_list, list) {
+		/*
+		 * Doing this without locking might lead to using different
+		 * rate_mult values in od_update() and od_dbs_timer().
+		 */
+		mutex_lock(&policy_dbs->timer_mutex);
+		policy_dbs->rate_mult = 1;
+		mutex_unlock(&policy_dbs->timer_mutex);
 	}
+
 	return count;
 }
 
-static ssize_t store_ignore_nice_load(struct kobject *a, struct attribute *b,
+static ssize_t store_ignore_nice_load(struct gov_attr_set *attr_set,
 				      const char *buf, size_t count)
 {
+	struct dbs_data *dbs_data = to_dbs_data(attr_set);
 	unsigned int input;
 	int ret;
-
-	unsigned int j;
 
 	ret = sscanf(buf, "%u", &input);
 	if (ret != 1)
@@ -530,12 +604,13 @@ static ssize_t store_ignore_nice_load(struct kobject *a, struct attribute *b,
 	if (input > 1)
 		input = 1;
 
-	if (input == dbs_tuners_ins.ignore_nice) { /* nothing to do */
+	if (input == dbs_data->ignore_nice_load) { /* nothing to do */
 		return count;
 	}
-	dbs_tuners_ins.ignore_nice = input;
+	dbs_data->ignore_nice_load = input;
 
 	/* we need to re-evaluate prev_cpu_idle */
+<<<<<<< HEAD
 	for_each_online_cpu(j) {
 		struct cpu_dbs_info_s *dbs_info;
 		dbs_info = &per_cpu(od_cpu_dbs_info, j);
@@ -543,14 +618,17 @@ static ssize_t store_ignore_nice_load(struct kobject *a, struct attribute *b,
 						&dbs_info->prev_cpu_wall, dbs_tuners_ins.io_is_busy);
 		if (dbs_tuners_ins.ignore_nice)
 			dbs_info->prev_cpu_nice = kcpustat_cpu(j).cpustat[CPUTIME_NICE];
+=======
+	gov_update_cpu_data(dbs_data);
+>>>>>>> android-4.9
 
-	}
 	return count;
 }
 
-static ssize_t store_powersave_bias(struct kobject *a, struct attribute *b,
+static ssize_t store_powersave_bias(struct gov_attr_set *attr_set,
 				    const char *buf, size_t count)
 {
+<<<<<<< HEAD
 	int input  = 0;
 	int bypass = 0;
 	int ret, cpu, reenable_timer, j;
@@ -560,6 +638,14 @@ static ssize_t store_powersave_bias(struct kobject *a, struct attribute *b,
 	cpumask_clear(&cpus_timer_done);
 
 	ret = sscanf(buf, "%d", &input);
+=======
+	struct dbs_data *dbs_data = to_dbs_data(attr_set);
+	struct od_dbs_tuners *od_tuners = dbs_data->tuners;
+	struct policy_dbs_info *policy_dbs;
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+>>>>>>> android-4.9
 
 	if (ret != 1)
 		return -EINVAL;
@@ -582,6 +668,7 @@ static ssize_t store_powersave_bias(struct kobject *a, struct attribute *b,
 				(dbs_tuners_ins.powersave_bias ==
 				POWERSAVE_BIAS_MINLEVEL));
 
+<<<<<<< HEAD
 	dbs_tuners_ins.powersave_bias = input;
 
 	get_online_cpus();
@@ -666,10 +753,17 @@ skip_this_cpu_bypass:
 
 	mutex_unlock(&dbs_mutex);
 	put_online_cpus();
+=======
+	od_tuners->powersave_bias = input;
+
+	list_for_each_entry(policy_dbs, &attr_set->policy_list, list)
+		ondemand_powersave_bias_init(policy_dbs->policy);
+>>>>>>> android-4.9
 
 	return count;
 }
 
+<<<<<<< HEAD
 define_one_global_rw(sampling_rate);
 define_one_global_rw(io_is_busy);
 define_one_global_rw(up_threshold);
@@ -686,6 +780,26 @@ define_one_global_rw(input_boost);
 
 static struct attribute *dbs_attributes[] = {
 	&sampling_rate_min.attr,
+=======
+gov_show_one_common(sampling_rate);
+gov_show_one_common(up_threshold);
+gov_show_one_common(sampling_down_factor);
+gov_show_one_common(ignore_nice_load);
+gov_show_one_common(min_sampling_rate);
+gov_show_one_common(io_is_busy);
+gov_show_one(od, powersave_bias);
+
+gov_attr_rw(sampling_rate);
+gov_attr_rw(io_is_busy);
+gov_attr_rw(up_threshold);
+gov_attr_rw(sampling_down_factor);
+gov_attr_rw(ignore_nice_load);
+gov_attr_rw(powersave_bias);
+gov_attr_ro(min_sampling_rate);
+
+static struct attribute *od_attributes[] = {
+	&min_sampling_rate.attr,
+>>>>>>> android-4.9
 	&sampling_rate.attr,
 	&up_threshold.attr,
 	&down_differential.attr,
@@ -702,26 +816,19 @@ static struct attribute *dbs_attributes[] = {
 	NULL
 };
 
-static struct attribute_group dbs_attr_group = {
-	.attrs = dbs_attributes,
-	.name = "ondemand",
-};
-
 /************************** sysfs end ************************/
 
-static void dbs_freq_increase(struct cpufreq_policy *p, unsigned int freq)
+static struct policy_dbs_info *od_alloc(void)
 {
-	if (dbs_tuners_ins.powersave_bias)
-		freq = powersave_bias_target(p, freq, CPUFREQ_RELATION_H);
-	else if (p->cur == p->max)
-		return;
+	struct od_policy_dbs_info *dbs_info;
 
-	__cpufreq_driver_target(p, freq, dbs_tuners_ins.powersave_bias ?
-			CPUFREQ_RELATION_L : CPUFREQ_RELATION_H);
+	dbs_info = kzalloc(sizeof(*dbs_info), GFP_KERNEL);
+	return dbs_info ? &dbs_info->policy_dbs : NULL;
 }
 
-static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
+static void od_free(struct policy_dbs_info *policy_dbs)
 {
+<<<<<<< HEAD
 	/* Extrapolated load of this CPU */
 	unsigned int load_at_max_freq = 0;
 	unsigned int max_load_freq;
@@ -778,33 +885,47 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		if (dbs_tuners_ins.ignore_nice) {
 			u64 cur_nice;
 			unsigned long cur_nice_jiffies;
+=======
+	kfree(to_dbs_info(policy_dbs));
+}
+>>>>>>> android-4.9
 
-			cur_nice = kcpustat_cpu(j).cpustat[CPUTIME_NICE] -
-					 j_dbs_info->prev_cpu_nice;
-			/*
-			 * Assumption: nice time between sampling periods will
-			 * be less than 2^32 jiffies for 32 bit sys
-			 */
-			cur_nice_jiffies = (unsigned long)
-					cputime64_to_jiffies64(cur_nice);
+static int od_init(struct dbs_data *dbs_data)
+{
+	struct od_dbs_tuners *tuners;
+	u64 idle_time;
+	int cpu;
 
-			j_dbs_info->prev_cpu_nice = kcpustat_cpu(j).cpustat[CPUTIME_NICE];
-			idle_time += jiffies_to_usecs(cur_nice_jiffies);
-		}
+	tuners = kzalloc(sizeof(*tuners), GFP_KERNEL);
+	if (!tuners)
+		return -ENOMEM;
 
+	cpu = get_cpu();
+	idle_time = get_cpu_idle_time_us(cpu, NULL);
+	put_cpu();
+	if (idle_time != -1ULL) {
+		/* Idle micro accounting is supported. Use finer thresholds */
+		dbs_data->up_threshold = MICRO_FREQUENCY_UP_THRESHOLD;
 		/*
-		 * For the purpose of ondemand, waiting for disk IO is an
-		 * indication that you're performance critical, and not that
-		 * the system is actually idle. So subtract the iowait time
-		 * from the cpu idle time.
-		 */
+		 * In nohz/micro accounting case we set the minimum frequency
+		 * not depending on HZ, but fixed (very low). The deferred
+		 * timer might skip some samples if idle/sleeping as needed.
+		*/
+		dbs_data->min_sampling_rate = MICRO_FREQUENCY_MIN_SAMPLE_RATE;
+	} else {
+		dbs_data->up_threshold = DEF_FREQUENCY_UP_THRESHOLD;
 
-		if (dbs_tuners_ins.io_is_busy && idle_time >= iowait_time)
-			idle_time -= iowait_time;
+		/* For correct statistics, we need 10 ticks for each measure */
+		dbs_data->min_sampling_rate = MIN_SAMPLING_RATE_RATIO *
+			jiffies_to_usecs(10);
+	}
 
-		if (unlikely(!wall_time || wall_time < idle_time))
-			continue;
+	dbs_data->sampling_down_factor = DEF_SAMPLING_DOWN_FACTOR;
+	dbs_data->ignore_nice_load = 0;
+	tuners->powersave_bias = default_powersave_bias;
+	dbs_data->io_is_busy = should_io_be_busy();
 
+<<<<<<< HEAD
 		cur_load = 100 * (wall_time - idle_time) / wall_time;
 		j_dbs_info->max_load  = max(cur_load, j_dbs_info->prev_load);
 		j_dbs_info->prev_load = cur_load;
@@ -882,20 +1003,41 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	/* if we cannot reduce the frequency anymore, break out early */
 	if (policy->cur == policy->min)
 		return;
+=======
+	dbs_data->tuners = tuners;
+	return 0;
+}
 
-	/*
-	 * The optimal frequency is the frequency that is the lowest that
-	 * can support the current CPU usage without triggering the up
-	 * policy. To be safe, we focus 10 points under the threshold.
-	 */
-	if (max_load_freq <
-	    (dbs_tuners_ins.up_threshold - dbs_tuners_ins.down_differential) *
-	     policy->cur) {
-		unsigned int freq_next;
-		freq_next = max_load_freq /
-				(dbs_tuners_ins.up_threshold -
-				 dbs_tuners_ins.down_differential);
+static void od_exit(struct dbs_data *dbs_data)
+{
+	kfree(dbs_data->tuners);
+}
 
+static void od_start(struct cpufreq_policy *policy)
+{
+	struct od_policy_dbs_info *dbs_info = to_dbs_info(policy->governor_data);
+
+	dbs_info->sample_type = OD_NORMAL_SAMPLE;
+	ondemand_powersave_bias_init(policy);
+}
+
+static struct od_ops od_ops = {
+	.powersave_bias_target = generic_powersave_bias_target,
+};
+>>>>>>> android-4.9
+
+static struct dbs_governor od_dbs_gov = {
+	.gov = CPUFREQ_DBS_GOVERNOR_INITIALIZER("ondemand"),
+	.kobj_type = { .default_attrs = od_attributes },
+	.gov_dbs_timer = od_dbs_timer,
+	.alloc = od_alloc,
+	.free = od_free,
+	.init = od_init,
+	.exit = od_exit,
+	.start = od_start,
+};
+
+<<<<<<< HEAD
 		/* No longer fully busy, reset rate_mult */
 		this_dbs_info->rate_mult = 1;
 
@@ -928,18 +1070,26 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		}
 	}
 }
+=======
+#define CPU_FREQ_GOV_ONDEMAND	(&od_dbs_gov.gov)
+>>>>>>> android-4.9
 
-static void do_dbs_timer(struct work_struct *work)
+static void od_set_powersave_bias(unsigned int powersave_bias)
 {
-	struct cpu_dbs_info_s *dbs_info =
-		container_of(work, struct cpu_dbs_info_s, work.work);
-	unsigned int cpu = dbs_info->cpu;
-	int sample_type = dbs_info->sample_type;
+	unsigned int cpu;
+	cpumask_t done;
 
-	int delay;
+	default_powersave_bias = powersave_bias;
+	cpumask_clear(&done);
 
-	mutex_lock(&dbs_info->timer_mutex);
+	get_online_cpus();
+	for_each_online_cpu(cpu) {
+		struct cpufreq_policy *policy;
+		struct policy_dbs_info *policy_dbs;
+		struct dbs_data *dbs_data;
+		struct od_dbs_tuners *od_tuners;
 
+<<<<<<< HEAD
 	/* Common NORMAL_SAMPLE setup */
 	dbs_info->sample_type = DBS_NORMAL_SAMPLE;
 	if (!dbs_tuners_ins.powersave_bias ||
@@ -969,48 +1119,45 @@ static void do_dbs_timer(struct work_struct *work)
 	queue_delayed_work_on(cpu, dbs_wq, &dbs_info->work, delay);
 	mutex_unlock(&dbs_info->timer_mutex);
 }
+=======
+		if (cpumask_test_cpu(cpu, &done))
+			continue;
+>>>>>>> android-4.9
 
-static inline void dbs_timer_init(struct cpu_dbs_info_s *dbs_info)
-{
-	/* We want all CPUs to do sampling nearly on same jiffy */
-	int delay = usecs_to_jiffies(dbs_tuners_ins.sampling_rate);
+		policy = cpufreq_cpu_get_raw(cpu);
+		if (!policy || policy->governor != CPU_FREQ_GOV_ONDEMAND)
+			continue;
 
-	if (num_online_cpus() > 1)
-		delay -= jiffies % delay;
+		policy_dbs = policy->governor_data;
+		if (!policy_dbs)
+			continue;
 
+<<<<<<< HEAD
 	dbs_info->sample_type = DBS_NORMAL_SAMPLE;
 	INIT_DELAYED_WORK_DEFERRABLE(&dbs_info->work, do_dbs_timer);
 	queue_delayed_work_on(dbs_info->cpu, dbs_wq, &dbs_info->work, delay);
 }
+=======
+		cpumask_or(&done, &done, policy->cpus);
+>>>>>>> android-4.9
 
-static inline void dbs_timer_exit(struct cpu_dbs_info_s *dbs_info)
-{
-	cancel_delayed_work_sync(&dbs_info->work);
+		dbs_data = policy_dbs->dbs_data;
+		od_tuners = dbs_data->tuners;
+		od_tuners->powersave_bias = default_powersave_bias;
+	}
+	put_online_cpus();
 }
 
-/*
- * Not all CPUs want IO time to be accounted as busy; this dependson how
- * efficient idling at a higher frequency/voltage is.
- * Pavel Machek says this is not so for various generations of AMD and old
- * Intel systems.
- * Mike Chan (androidlcom) calis this is also not true for ARM.
- * Because of this, whitelist specific known (series) of CPUs by default, and
- * leave all others up to the user.
- */
-static int should_io_be_busy(void)
+void od_register_powersave_bias_handler(unsigned int (*f)
+		(struct cpufreq_policy *, unsigned int, unsigned int),
+		unsigned int powersave_bias)
 {
-#if defined(CONFIG_X86)
-	/*
-	 * For Intel, Core 2 (model 15) andl later have an efficient idle.
-	 */
-	if (boot_cpu_data.x86_vendor == X86_VENDOR_INTEL &&
-	    boot_cpu_data.x86 == 6 &&
-	    boot_cpu_data.x86_model >= 15)
-		return 1;
-#endif
-	return 0;
+	od_ops.powersave_bias_target = f;
+	od_set_powersave_bias(powersave_bias);
 }
+EXPORT_SYMBOL_GPL(od_register_powersave_bias_handler);
 
+<<<<<<< HEAD
 static void dbs_refresh_callback(struct work_struct *work)
 {
 	struct cpufreq_policy *policy;
@@ -1381,10 +1528,18 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		break;
 	}
 	return 0;
+=======
+void od_unregister_powersave_bias_handler(void)
+{
+	od_ops.powersave_bias_target = generic_powersave_bias_target;
+	od_set_powersave_bias(0);
+>>>>>>> android-4.9
 }
+EXPORT_SYMBOL_GPL(od_unregister_powersave_bias_handler);
 
 static int __init cpufreq_gov_dbs_init(void)
 {
+<<<<<<< HEAD
 	u64 idle_time;
 	unsigned int i;
 	int rc, cpu = get_cpu();
@@ -1432,10 +1587,14 @@ static int __init cpufreq_gov_dbs_init(void)
 		printk(KERN_ERR "Failed to register dbs_sync threads\n");
 
 	return cpufreq_register_governor(&cpufreq_gov_ondemand);
+=======
+	return cpufreq_register_governor(CPU_FREQ_GOV_ONDEMAND);
+>>>>>>> android-4.9
 }
 
 static void __exit cpufreq_gov_dbs_exit(void)
 {
+<<<<<<< HEAD
 	unsigned int i;
 
 	cpufreq_unregister_governor(&cpufreq_gov_ondemand);
@@ -1445,8 +1604,10 @@ static void __exit cpufreq_gov_dbs_exit(void)
 		mutex_destroy(&this_dbs_info->timer_mutex);
 	}
 	destroy_workqueue(dbs_wq);
+=======
+	cpufreq_unregister_governor(CPU_FREQ_GOV_ONDEMAND);
+>>>>>>> android-4.9
 }
-
 
 MODULE_AUTHOR("Venkatesh Pallipadi <venkatesh.pallipadi@intel.com>");
 MODULE_AUTHOR("Alexey Starikovskiy <alexey.y.starikovskiy@intel.com>");
@@ -1455,6 +1616,11 @@ MODULE_DESCRIPTION("'cpufreq_ondemand' - A dynamic cpufreq governor for "
 MODULE_LICENSE("GPL");
 
 #ifdef CONFIG_CPU_FREQ_DEFAULT_GOV_ONDEMAND
+struct cpufreq_governor *cpufreq_default_governor(void)
+{
+	return CPU_FREQ_GOV_ONDEMAND;
+}
+
 fs_initcall(cpufreq_gov_dbs_init);
 #else
 module_init(cpufreq_gov_dbs_init);

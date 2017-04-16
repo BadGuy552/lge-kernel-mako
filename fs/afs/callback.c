@@ -351,9 +351,7 @@ void afs_dispatch_give_up_callbacks(struct work_struct *work)
  */
 void afs_flush_callback_breaks(struct afs_server *server)
 {
-	cancel_delayed_work(&server->cb_break_work);
-	queue_delayed_work(afs_callback_update_worker,
-			   &server->cb_break_work, 0);
+	mod_delayed_work(afs_callback_update_worker, &server->cb_break_work, 0);
 }
 
 #if 0
@@ -463,8 +461,8 @@ static void afs_callback_updater(struct work_struct *work)
  */
 int __init afs_callback_update_init(void)
 {
-	afs_callback_update_worker =
-		create_singlethread_workqueue("kafs_callbackd");
+	afs_callback_update_worker = alloc_ordered_workqueue("kafs_callbackd",
+							     WQ_MEM_RECLAIM);
 	return afs_callback_update_worker ? 0 : -ENOMEM;
 }
 

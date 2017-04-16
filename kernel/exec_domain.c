@@ -20,6 +20,7 @@
 #include <linux/types.h>
 #include <linux/fs_struct.h>
 
+<<<<<<< HEAD
 
 static void default_handler(int, struct pt_regs *);
 
@@ -152,17 +153,12 @@ int __set_personality(unsigned int personality)
 	return 0;
 }
 
+=======
+>>>>>>> android-4.9
 #ifdef CONFIG_PROC_FS
 static int execdomains_proc_show(struct seq_file *m, void *v)
 {
-	struct exec_domain	*ep;
-
-	read_lock(&exec_domains_lock);
-	for (ep = exec_domains; ep; ep = ep->next)
-		seq_printf(m, "%d-%d\t%-16s\t[%s]\n",
-			       ep->pers_low, ep->pers_high, ep->name,
-			       module_name(ep->module));
-	read_unlock(&exec_domains_lock);
+	seq_puts(m, "0-0\tLinux           \t[kernel]\n");
 	return 0;
 }
 
@@ -195,8 +191,3 @@ SYSCALL_DEFINE1(personality, unsigned int, personality)
 
 	return old;
 }
-
-
-EXPORT_SYMBOL(register_exec_domain);
-EXPORT_SYMBOL(unregister_exec_domain);
-EXPORT_SYMBOL(__set_personality);

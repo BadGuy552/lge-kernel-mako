@@ -29,7 +29,7 @@ struct nlmsvc_binding {
 	void			(*fclose)(struct file *);
 };
 
-extern struct nlmsvc_binding *	nlmsvc_ops;
+extern const struct nlmsvc_binding *nlmsvc_ops;
 
 /*
  * Similar to nfs_client_initdata, but without the NFS-specific
@@ -54,7 +54,7 @@ extern void	nlmclnt_done(struct nlm_host *host);
 
 extern int	nlmclnt_proc(struct nlm_host *host, int cmd,
 					struct file_lock *fl);
-extern int	lockd_up(void);
-extern void	lockd_down(void);
+extern int	lockd_up(struct net *net);
+extern void	lockd_down(struct net *net);
 
 #endif /* LINUX_LOCKD_BIND_H */

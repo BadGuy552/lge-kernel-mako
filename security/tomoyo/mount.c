@@ -73,7 +73,11 @@ static bool tomoyo_check_mount_acl(struct tomoyo_request_info *r,
  */
 static int tomoyo_mount_acl(struct tomoyo_request_info *r,
 			    const char *dev_name,
+<<<<<<< HEAD
 			    struct path *dir, const char *type,
+=======
+			    const struct path *dir, const char *type,
+>>>>>>> android-4.9
 			    unsigned long flags)
 {
 	struct tomoyo_obj_info obj = { };
@@ -184,7 +188,11 @@ static int tomoyo_mount_acl(struct tomoyo_request_info *r,
  *
  * Returns 0 on success, negative value otherwise.
  */
+<<<<<<< HEAD
 int tomoyo_mount_permission(const char *dev_name, struct path *path,
+=======
+int tomoyo_mount_permission(const char *dev_name, const struct path *path,
+>>>>>>> android-4.9
 			    const char *type, unsigned long flags,
 			    void *data_page)
 {
